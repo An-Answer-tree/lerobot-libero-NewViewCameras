@@ -45,11 +45,10 @@ def sorted_demo_keys(data_group):
     return sorted(demo_keys, key=lambda key: int(key.split("_")[1]))
 
 
-def camera_name_to_obs_key(camera_name, use_depth=False):
+def camera_name_to_obs_key(camera_name):
     if camera_name == "robot0_eye_in_hand":
-        return "eye_in_hand_depth" if use_depth else "eye_in_hand_rgb"
-    suffix = "depth" if use_depth else "rgb"
-    return f"{camera_name}_{suffix}"
+        return "eye_in_hand_rgb"
+    return f"{camera_name}_rgb"
 
 
 def discover_benchmark_tasks(source_root, benchmark_names=None, task_filter=None):
@@ -118,7 +117,6 @@ def load_env_args(data_group):
 def build_replay_env(
     data_group,
     camera_names=None,
-    use_depth=False,
     camera_height=128,
     camera_width=128,
 ):
@@ -147,7 +145,7 @@ def build_replay_env(
         has_offscreen_renderer=True,
         ignore_done=True,
         use_camera_obs=True,
-        camera_depths=use_depth,
+        camera_depths=False,
         camera_names=list(camera_names),
         reward_shaping=True,
         control_freq=20,
@@ -184,7 +182,6 @@ def replay_demo_episode(
     env,
     source_episode_group,
     camera_names=None,
-    use_depth=False,
     no_proprio=False,
     divergence_threshold=0.01,
 ):
@@ -210,9 +207,7 @@ def replay_demo_episode(
 
     obs_arrays = {}
     for camera_name in camera_names:
-        obs_arrays[camera_name_to_obs_key(camera_name, use_depth=False)] = []
-        if use_depth:
-            obs_arrays[camera_name_to_obs_key(camera_name, use_depth=True)] = []
+        obs_arrays[camera_name_to_obs_key(camera_name)] = []
 
     proprio_arrays = {}
     robot_states = []
@@ -237,14 +232,7 @@ def replay_demo_episode(
                 raise KeyError(
                     f"Missing '{img_key}' from obs keys: {sorted(list(obs.keys()))}"
                 )
-            obs_arrays[camera_name_to_obs_key(camera_name, use_depth=False)].append(obs[img_key])
-            if use_depth:
-                depth_key = f"{camera_name}_depth"
-                if depth_key not in obs:
-                    raise KeyError(
-                        f"Missing '{depth_key}' from obs keys: {sorted(list(obs.keys()))}"
-                    )
-                obs_arrays[camera_name_to_obs_key(camera_name, use_depth=True)].append(obs[depth_key])
+            obs_arrays[camera_name_to_obs_key(camera_name)].append(obs[img_key])
 
         if not no_proprio:
             step_proprio = _extract_proprio(obs)
@@ -317,7 +305,6 @@ def reconstruct_dataset_file(
     source_hdf5_path,
     output_hdf5_path,
     camera_names=None,
-    use_depth=False,
     no_proprio=False,
     divergence_threshold=0.01,
     camera_height=128,
@@ -344,7 +331,6 @@ def reconstruct_dataset_file(
         env, rebuilt_env_args = build_replay_env(
             source_data_group,
             camera_names=camera_names,
-            use_depth=use_depth,
             camera_height=camera_height,
             camera_width=camera_width,
         )
@@ -356,7 +342,6 @@ def reconstruct_dataset_file(
                     env=env,
                     source_episode_group=source_ep_group,
                     camera_names=camera_names,
-                    use_depth=use_depth,
                     no_proprio=no_proprio,
                     divergence_threshold=divergence_threshold,
                 )

@@ -21,6 +21,11 @@ DEFAULT_LEGACY_ASSET_MARKERS = (
     "libero/libero/assets/",
     "libero/assets/",
 )
+DEFAULT_CAMERA_HEIGHT = 128
+DEFAULT_CAMERA_WIDTH = 128
+DEFAULT_NO_PROPRIO = False
+DEFAULT_STATE_ERROR_THRESHOLD = 0.01
+DEFAULT_VALUE_CHECK_ATOL = 1e-6
 
 
 def _sorted_demo_keys(data_group):
@@ -173,8 +178,8 @@ def validate_action_state_consistency(source_hdf5_path, rebuilt_hdf5_path, atol=
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Replay LIBERO source datasets to reconstruct semantically equivalent hdf5 files. "
-            "Step3/4 (extra fixed cameras) are intentionally deferred."
+            "Replay downloaded LIBERO datasets using source actions "
+            "and reconstruct equivalent hdf5 files."
         )
     )
     parser.add_argument(
@@ -187,7 +192,7 @@ def parse_args():
         "--output-root",
         type=str,
         default="/home/szliutong/Desktop",
-        help="Output dataset root, default '<source-root>_replay'.",
+        help="Output dataset root, default '/home/szliutong/Desktop'.",
     )
     parser.add_argument(
         "--benchmarks",
@@ -202,14 +207,9 @@ def parse_args():
         help="Optional task allowlist by exact task names.",
     )
     parser.add_argument(
-        "--skip-existing",
+        "--dry-run",
         action="store_true",
-        help="Skip target hdf5 file if already exists.",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing target hdf5 file.",
+        help="Only print source/target file mapping, do not reconstruct.",
     )
     parser.add_argument(
         "--camera-names",
@@ -217,85 +217,25 @@ def parse_args():
         default=None,
         help=(
             "Camera names used during replay rendering. "
-            "Default follows source env_args camera_names, fallback to robot0_eye_in_hand agentview."
+            "Default follows source env_args camera_names."
         ),
     )
     parser.add_argument(
         "--camera-height",
         type=int,
-        default=128,
+        default=DEFAULT_CAMERA_HEIGHT,
         help="Replay render height.",
     )
     parser.add_argument(
         "--camera-width",
         type=int,
-        default=128,
+        default=DEFAULT_CAMERA_WIDTH,
         help="Replay render width.",
     )
     parser.add_argument(
-        "--use-depth",
+        "--overwrite",
         action="store_true",
-        help="Record depth observations during replay (off by default).",
-    )
-    parser.add_argument(
-        "--no-proprio",
-        action="store_true",
-        help="Disable proprioceptive observation writing.",
-    )
-    parser.add_argument(
-        "--state-error-threshold",
-        type=float,
-        default=0.01,
-        help="Warn threshold for replay-vs-source state l2 divergence.",
-    )
-    parser.add_argument(
-        "--num-workers",
-        type=int,
-        default=1,
-        help="Reserved for future parallelism. Current version always runs single-worker.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print resolved source/target mapping without reconstruction.",
-    )
-    parser.add_argument(
-        "--libero-assets-root",
-        type=str,
-        default=None,
-        help=(
-            "Override local LIBERO assets root for legacy XML path remapping. "
-            "Default uses get_libero_path('assets')."
-        ),
-    )
-    parser.add_argument(
-        "--legacy-asset-markers",
-        nargs="+",
-        default=list(DEFAULT_LEGACY_ASSET_MARKERS),
-        help=(
-            "Legacy XML path markers to remap into --libero-assets-root "
-            "(e.g. chiliocosm/assets/)."
-        ),
-    )
-    parser.add_argument(
-        "--value-check-atol",
-        type=float,
-        default=1e-6,
-        help="Absolute tolerance for action/state value consistency checks.",
-    )
-    parser.add_argument(
-        "--max-diverged-ratio",
-        type=float,
-        default=1.0,
-        help=(
-            "Maximum allowed ratio of diverged replay steps in one file. "
-            "Only takes effect as a hard failure when --enforce-divergence-check is set."
-        ),
-    )
-    parser.add_argument(
-        "--enforce-divergence-check",
-        action="store_true",
-        help="Treat files over --max-diverged-ratio as failed.",
+        help="Overwrite existing target hdf5 file.",
     )
     return parser.parse_args()
 
@@ -315,17 +255,9 @@ def print_verify_commands(source_path, target_path):
 
 def main():
     args = parse_args()
-    if args.skip_existing and args.overwrite:
-        raise ValueError("--skip-existing and --overwrite cannot be enabled together")
-    if args.max_diverged_ratio < 0 or args.max_diverged_ratio > 1:
-        raise ValueError("--max-diverged-ratio must be in [0, 1]")
-
-    if args.num_workers != 1:
-        print("[warning] --num-workers is reserved; running with a single worker.")
-
     robosuite_root, libero_assets_root, legacy_markers = install_model_xml_remapper(
-        libero_assets_root=args.libero_assets_root,
-        legacy_asset_markers=args.legacy_asset_markers,
+        libero_assets_root=None,
+        legacy_asset_markers=DEFAULT_LEGACY_ASSET_MARKERS,
     )
 
     source_root = os.path.abspath(
@@ -351,6 +283,13 @@ def main():
     print(f"[info] robosuite root for replay xml: {robosuite_root}")
     print(f"[info] libero assets root for replay xml: {libero_assets_root}")
     print(f"[info] legacy asset markers: {list(legacy_markers)}")
+    print(
+        "[info] replay settings: "
+        f"camera_names={camera_names if camera_names is not None else 'source_default'}, "
+        f"camera_height={args.camera_height}, "
+        f"camera_width={args.camera_width}, "
+        f"no_proprio={DEFAULT_NO_PROPRIO}"
+    )
 
     for missing in missing_tasks:
         print(f"[warning] missing source demo: {missing['source_demo_path']}")
@@ -368,7 +307,6 @@ def main():
         return
 
     processed = 0
-    skipped = 0
     failed = 0
     total_samples = 0
 
@@ -379,15 +317,11 @@ def main():
         dst_file.parent.mkdir(parents=True, exist_ok=True)
 
         if dst_file.exists():
-            if args.skip_existing:
-                skipped += 1
-                print(f"[skip] {dst_path}")
-                continue
             if args.overwrite:
                 dst_file.unlink()
             else:
                 raise FileExistsError(
-                    f"Target file exists: {dst_path}. Use --skip-existing or --overwrite."
+                    f"Target file exists: {dst_path}. Use --overwrite."
                 )
 
         print(f"[replay] {format_task(task_info)}")
@@ -396,9 +330,8 @@ def main():
                 source_hdf5_path=src_path,
                 output_hdf5_path=dst_path,
                 camera_names=camera_names,
-                use_depth=args.use_depth,
-                no_proprio=args.no_proprio,
-                divergence_threshold=args.state_error_threshold,
+                no_proprio=DEFAULT_NO_PROPRIO,
+                divergence_threshold=DEFAULT_STATE_ERROR_THRESHOLD,
                 camera_height=args.camera_height,
                 camera_width=args.camera_width,
             )
@@ -419,7 +352,7 @@ def main():
         consistency = validate_action_state_consistency(
             source_hdf5_path=src_path,
             rebuilt_hdf5_path=dst_path,
-            atol=args.value_check_atol,
+            atol=DEFAULT_VALUE_CHECK_ATOL,
         )
         if not consistency["ok"]:
             failed += 1
@@ -439,16 +372,6 @@ def main():
             if summary["total_samples"] > 0
             else 0.0
         )
-        if diverged_ratio > args.max_diverged_ratio:
-            level = "[error]" if args.enforce_divergence_check else "[warning]"
-            print(
-                f"{level} replay divergence high: "
-                f"ratio={diverged_ratio:.4f} > threshold={args.max_diverged_ratio:.4f}"
-            )
-            if args.enforce_divergence_check:
-                failed += 1
-                print_verify_commands(src_path, dst_path)
-                continue
 
         processed += 1
         total_samples += summary["total_samples"]
@@ -474,10 +397,9 @@ def main():
 
     print("========================================")
     print(
-        "[done] processed={processed}, skipped={skipped}, failed={failed}, "
+        "[done] processed={processed}, failed={failed}, "
         "total_transitions={total_samples}".format(
             processed=processed,
-            skipped=skipped,
             failed=failed,
             total_samples=total_samples,
         )
