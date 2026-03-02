@@ -51,6 +51,11 @@ def camera_name_to_obs_key(camera_name):
     return f"{camera_name}_rgb"
 
 
+def correct_image_orientation(image):
+    # MuJoCo offscreen render uses bottom-left as origin, flip to top-left image convention.
+    return np.flip(image, axis=0).copy()
+
+
 def discover_benchmark_tasks(source_root, benchmark_names=None, task_filter=None):
     benchmark_dict = libero_benchmark.get_benchmark_dict()
     benchmark_names = benchmark_names or DEFAULT_BENCHMARKS
@@ -232,7 +237,8 @@ def replay_demo_episode(
                 raise KeyError(
                     f"Missing '{img_key}' from obs keys: {sorted(list(obs.keys()))}"
                 )
-            obs_arrays[camera_name_to_obs_key(camera_name)].append(obs[img_key])
+            corrected_image = correct_image_orientation(obs[img_key])
+            obs_arrays[camera_name_to_obs_key(camera_name)].append(corrected_image)
 
         if not no_proprio:
             step_proprio = _extract_proprio(obs)
