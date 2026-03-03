@@ -13,6 +13,7 @@ from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation
 from replay_dataset_utils import (
     DEFAULT_BENCHMARKS,
+    DEFAULT_CAMERA_NAMES,
     discover_benchmark_tasks,
     reconstruct_dataset_file,
     validate_reconstructed_file,
@@ -153,6 +154,17 @@ def _parse_camera_offset_file(offset_file):
 
 def _trajectory_camera_names(base_camera_name, num_cameras):
     return [f"{base_camera_name}_traj_{idx:02d}" for idx in range(num_cameras)]
+
+
+def _dedupe_keep_order(items):
+    seen = set()
+    deduped = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
 
 
 def _parse_vector_attr(attr_value, dim, attr_name):
@@ -444,7 +456,8 @@ def parse_args():
         default=None,
         help=(
             "Camera names used during replay rendering. "
-            "Default follows source env_args camera_names."
+            "Without trajectory cameras, default follows source env_args camera_names. "
+            "With --camera-offset-file, default keeps original two cameras plus generated trajectory cameras."
         ),
     )
     parser.add_argument(
@@ -536,10 +549,11 @@ def main():
         }
 
         if camera_names is None:
-            camera_names = list(trajectory_camera_names)
+            camera_names = list(DEFAULT_CAMERA_NAMES) + list(trajectory_camera_names)
         else:
             # Keep existing requested cameras while appending generated trajectory cameras.
             camera_names = list(camera_names) + list(trajectory_camera_names)
+        camera_names = _dedupe_keep_order(camera_names)
 
     robosuite_root, libero_assets_root, legacy_markers = install_model_xml_remapper(
         libero_assets_root=None,

@@ -6,7 +6,5 @@ uv pip install -r requirements.txt
 pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 git clone --branch v1.4.0 https://github.com/ARISE-Initiative/robosuite.git
-cd ../robosuite
-CC=/usr/bin/gcc uv pip install -e .
-cd ../LIBERO
+CC=/usr/bin/gcc uv pip install -e ../robosuite
 uv pip install -e .
