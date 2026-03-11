@@ -406,6 +406,9 @@ def _generate_operation_camera_specs(
             [max(float(np.linalg.norm(front_rel)), 0.8), 0.0, max(front_rel[2], 1.0)],
             dtype=np.float64,
         )
+    horizontal_radius = max(np.linalg.norm(front_rel[:2]), 0.8)
+    front_dir = _normalize(np.array([front_rel[0], front_rel[1], 0.0], dtype=np.float64))
+    back_dir = -front_dir
 
     left_camera = _find_camera_element(camera_map, ["sideview"])
     if left_camera is not None:
@@ -438,23 +441,39 @@ def _generate_operation_camera_specs(
         right_rel = _rotate_xy(front_rel, -90.0)
 
     back_rel = _rotate_xy(front_rel, 180.0)
+    side_target = center + front_dir * (0.18 * horizontal_radius)
+    top_pos = center + top_rel + front_dir * (0.18 * horizontal_radius)
+    back_pos = center + back_rel + back_dir * (0.18 * horizontal_radius)
+    back_pos[2] += 0.18 * horizontal_radius
+    back_target = center.copy()
+    back_target[2] -= 0.12 * horizontal_radius
 
-    specs = []
-    for view_name, rel in (
-        ("top", top_rel),
-        ("left", left_rel),
-        ("right", right_rel),
-        ("back", back_rel),
-    ):
-        specs.append(
-            _build_fixed_camera_spec(
-                name=config.camera_names[view_name],
-                pos=center + rel,
-                target_pos=center,
-                camera_fovy=camera_fovy,
-            )
-        )
-    return specs
+    return [
+        _build_fixed_camera_spec(
+            name=config.camera_names["top"],
+            pos=top_pos,
+            target_pos=center,
+            camera_fovy=camera_fovy,
+        ),
+        _build_fixed_camera_spec(
+            name=config.camera_names["left"],
+            pos=center + left_rel,
+            target_pos=side_target,
+            camera_fovy=camera_fovy,
+        ),
+        _build_fixed_camera_spec(
+            name=config.camera_names["right"],
+            pos=center + right_rel,
+            target_pos=side_target,
+            camera_fovy=camera_fovy,
+        ),
+        _build_fixed_camera_spec(
+            name=config.camera_names["back"],
+            pos=back_pos,
+            target_pos=back_target,
+            camera_fovy=camera_fovy,
+        ),
+    ]
 
 
 def _inject_operation_cameras(
