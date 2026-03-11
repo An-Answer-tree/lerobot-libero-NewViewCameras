@@ -31,6 +31,8 @@ DEFAULT_STATE_ERROR_THRESHOLD = 0.01
 DEFAULT_VALUE_CHECK_ATOL = 1e-6
 DEFAULT_TRAJECTORY_CAMERA_COUNT = 10
 DEFAULT_TRAJECTORY_INTERP_SAMPLES = 300
+DEFAULT_TRAJECTORY_OFFSET_FILE = str(Path(__file__).resolve().parent / "camera_offsets_example.txt")
+DEFAULT_OPERATION_CAMERA_BASE_NAME = "agentview"
 DEFAULT_OPERATION_CAMERA_NAMES = {
     "top": "operation_topview",
     "left": "operation_leftview",
@@ -633,16 +635,6 @@ def parse_args():
         help="Only print source/target file mapping, do not reconstruct.",
     )
     parser.add_argument(
-        "--camera-names",
-        nargs="+",
-        default=None,
-        help=(
-            "Camera names used during replay rendering. "
-            "Without generated cameras, default follows source env_args camera_names. "
-            "With generated cameras enabled, default keeps the original two cameras plus appended camera names."
-        ),
-    )
-    parser.add_argument(
         "--camera-height",
         type=int,
         default=DEFAULT_CAMERA_HEIGHT,
@@ -655,38 +647,22 @@ def parse_args():
         help="Replay render width.",
     )
     parser.add_argument(
-        "--add-operation-cameras",
-        dest="add_operation_cameras",
-        action="store_true",
-        default=True,
-        help=(
-            "Append four fixed operation cameras during replay: "
-            "operation_topview / operation_leftview / operation_rightview / operation_backview. "
-            "Enabled by default."
-        ),
-    )
-    parser.add_argument(
         "--no-operation-cameras",
-        dest="add_operation_cameras",
-        action="store_false",
+        action="store_true",
         help="Disable the default operation cameras.",
     )
     parser.add_argument(
-        "--operation-camera-base-name",
-        type=str,
-        default="agentview",
-        help=(
-            "Fallback base camera used to estimate the operation center when "
-            "frontview / birdview / sideview are unavailable in XML."
-        ),
+        "--no-trajectory-cameras",
+        action="store_true",
+        help="Disable the default trajectory cameras.",
     )
     parser.add_argument(
         "--camera-offset-file",
         type=str,
-        default=None,
+        default=DEFAULT_TRAJECTORY_OFFSET_FILE,
         help=(
             "Optional txt file with 3 offset lines (d_phi, d_theta, d_r). "
-            "When provided, trajectory cameras are generated from this file."
+            "Trajectory cameras are enabled by default using this file."
         ),
     )
     parser.add_argument(
@@ -735,20 +711,20 @@ def main():
     if args.trajectory_interp_samples < 2:
         raise ValueError("--trajectory-interp-samples must be >= 2")
 
-    camera_names = list(args.camera_names) if args.camera_names else None
+    camera_names = list(DEFAULT_CAMERA_NAMES)
     operation_config = None
     operation_camera_names = []
     trajectory_config = None
     trajectory_camera_names = []
 
-    if args.add_operation_cameras:
+    if not args.no_operation_cameras:
         operation_camera_names = list(DEFAULT_OPERATION_CAMERA_NAMES.values())
         operation_config = {
-            "base_camera_name": args.operation_camera_base_name,
+            "base_camera_name": DEFAULT_OPERATION_CAMERA_BASE_NAME,
             "camera_names": dict(DEFAULT_OPERATION_CAMERA_NAMES),
         }
 
-    if args.camera_offset_file:
+    if not args.no_trajectory_cameras and args.camera_offset_file:
         offset_file = os.path.abspath(os.path.expanduser(args.camera_offset_file))
         d_phi, d_theta, d_r = _parse_camera_offset_file(offset_file)
         trajectory_camera_names = _trajectory_camera_names(
@@ -766,10 +742,7 @@ def main():
         }
 
     generated_camera_names = list(operation_camera_names) + list(trajectory_camera_names)
-    if generated_camera_names:
-        if camera_names is None:
-            camera_names = list(DEFAULT_CAMERA_NAMES)
-        camera_names = _dedupe_keep_order(list(camera_names) + generated_camera_names)
+    camera_names = _dedupe_keep_order(list(camera_names) + generated_camera_names)
 
     robosuite_root, libero_assets_root, legacy_markers = install_model_xml_remapper(
         libero_assets_root=None,
@@ -802,13 +775,13 @@ def main():
     print(f"[info] legacy asset markers: {list(legacy_markers)}")
     print(
         "[info] replay settings: "
-        f"camera_names={camera_names if camera_names is not None else 'source_default'}, "
+        f"camera_names={camera_names}, "
         f"camera_height={args.camera_height}, "
         f"camera_width={args.camera_width}, "
         f"no_proprio={DEFAULT_NO_PROPRIO}"
     )
     if operation_config is not None:
-        print(f"[info] operation camera base: {args.operation_camera_base_name}")
+        print(f"[info] operation camera base: {DEFAULT_OPERATION_CAMERA_BASE_NAME}")
         print(f"[info] generated operation cameras: {operation_camera_names}")
     if trajectory_config is not None:
         print(f"[info] trajectory offset file: {os.path.abspath(os.path.expanduser(args.camera_offset_file))}")
