@@ -31,6 +31,12 @@ DEFAULT_STATE_ERROR_THRESHOLD = 0.01
 DEFAULT_VALUE_CHECK_ATOL = 1e-6
 DEFAULT_TRAJECTORY_CAMERA_COUNT = 10
 DEFAULT_TRAJECTORY_INTERP_SAMPLES = 300
+DEFAULT_OPERATION_CAMERA_NAMES = {
+    "top": "operation_topview",
+    "left": "operation_leftview",
+    "right": "operation_rightview",
+    "back": "operation_backview",
+}
 
 
 def _sorted_demo_keys(data_group):
@@ -178,6 +184,12 @@ def _parse_vector_attr(attr_value, dim, attr_name):
     return values
 
 
+def _camera_pose_from_elem(camera_elem):
+    pos = _parse_vector_attr(camera_elem.get("pos"), 3, "pos")
+    quat = _parse_vector_attr(camera_elem.get("quat", "1 0 0 0"), 4, "quat")
+    return pos, quat, camera_elem.get("fovy")
+
+
 def _interpolate_offset_sequence(values, target_count):
     if len(values) == target_count:
         return np.asarray(values, dtype=np.float64)
@@ -213,6 +225,20 @@ def _normalize(vec):
     return vec / norm
 
 
+def _rotate_xy(vec, degrees):
+    radians = np.deg2rad(degrees)
+    cos_v = np.cos(radians)
+    sin_v = np.sin(radians)
+    return np.array(
+        [
+            cos_v * vec[0] - sin_v * vec[1],
+            sin_v * vec[0] + cos_v * vec[1],
+            vec[2],
+        ],
+        dtype=np.float64,
+    )
+
+
 def _lookat_quat_wxyz(camera_pos, target_pos):
     forward = _normalize(target_pos - camera_pos)
     z_axis = -forward
@@ -244,6 +270,43 @@ def _camera_center_from_pose(base_pos, base_quat_wxyz):
     if base_radius <= 1e-12:
         base_radius = 1.0
     return base_pos + base_forward * base_radius
+
+
+def _find_camera_elem(camera_map, candidate_names):
+    for name in candidate_names:
+        camera_elem = camera_map.get(name)
+        if camera_elem is not None:
+            return camera_elem
+    return None
+
+
+def _build_fixed_camera_spec(name, pos, target_pos, camera_fovy=None):
+    spec = {
+        "name": name,
+        "pos": np.asarray(pos, dtype=np.float64),
+        "quat": _lookat_quat_wxyz(np.asarray(pos, dtype=np.float64), target_pos),
+        "mode": "fixed",
+    }
+    if camera_fovy is not None:
+        spec["fovy"] = camera_fovy
+    return spec
+
+
+def _append_camera_specs(worldbody, specs, existing_names=None):
+    existing_names = set(existing_names or [])
+    for spec in specs:
+        if spec["name"] in existing_names:
+            continue
+        attrs = {
+            "name": spec["name"],
+            "mode": spec["mode"],
+            "pos": " ".join(f"{v:.6f}" for v in spec["pos"]),
+            "quat": " ".join(f"{v:.6f}" for v in spec["quat"]),
+        }
+        if "fovy" in spec and spec["fovy"] is not None:
+            attrs["fovy"] = spec["fovy"]
+        ET.SubElement(worldbody, "camera", attrs)
+        existing_names.add(spec["name"])
 
 
 def _generate_trajectory_camera_specs(
@@ -297,6 +360,131 @@ def _generate_trajectory_camera_specs(
     return specs
 
 
+def _generate_operation_camera_specs(root, operation_config):
+    camera_map = {
+        cam.get("name"): cam for cam in root.iter("camera") if cam.get("name") is not None
+    }
+    center_camera = _find_camera_elem(
+        camera_map,
+        _dedupe_keep_order(
+            [
+                "frontview",
+                operation_config["base_camera_name"],
+                "agentview",
+                "birdview",
+                "sideview",
+            ]
+        ),
+    )
+    if center_camera is None:
+        raise ValueError(
+            "Cannot build operation cameras because no reference camera was found in XML"
+        )
+
+    center_pos, center_quat, _ = _camera_pose_from_elem(center_camera)
+    center = _camera_center_from_pose(center_pos, center_quat)
+
+    fovy_camera = _find_camera_elem(
+        camera_map,
+        _dedupe_keep_order(
+            [
+                "frontview",
+                "birdview",
+                "sideview",
+                operation_config["base_camera_name"],
+                "agentview",
+            ]
+        ),
+    )
+    camera_fovy = fovy_camera.get("fovy") if fovy_camera is not None else None
+
+    front_camera = _find_camera_elem(
+        camera_map,
+        _dedupe_keep_order(
+            [
+                "frontview",
+                operation_config["base_camera_name"],
+                "agentview",
+            ]
+        ),
+    )
+    if front_camera is not None:
+        front_pos, _, _ = _camera_pose_from_elem(front_camera)
+        front_rel = front_pos - center
+    else:
+        front_rel = np.array([1.0, 0.0, 1.2], dtype=np.float64)
+
+    if np.linalg.norm(front_rel[:2]) <= 1e-8:
+        front_rel = np.array(
+            [max(float(np.linalg.norm(front_rel)), 0.8), 0.0, max(front_rel[2], 1.0)],
+            dtype=np.float64,
+        )
+
+    left_camera = _find_camera_elem(camera_map, ["sideview"])
+    if left_camera is not None:
+        left_pos, _, _ = _camera_pose_from_elem(left_camera)
+        left_rel = left_pos - center
+    else:
+        left_rel = _rotate_xy(front_rel, 90.0)
+
+    top_camera = _find_camera_elem(camera_map, ["birdview"])
+    if top_camera is not None:
+        top_pos, _, _ = _camera_pose_from_elem(top_camera)
+        top_rel = top_pos - center
+    else:
+        horizontal_radius = max(
+            np.linalg.norm(front_rel[:2]),
+            np.linalg.norm(left_rel[:2]),
+            0.8,
+        )
+        top_rel = np.array(
+            [
+                -0.2 * horizontal_radius,
+                0.0,
+                max(abs(front_rel[2]) + horizontal_radius * 1.1, 1.8),
+            ],
+            dtype=np.float64,
+        )
+
+    right_rel = np.array([left_rel[0], -left_rel[1], left_rel[2]], dtype=np.float64)
+    if np.linalg.norm(right_rel[:2]) <= 1e-8:
+        right_rel = _rotate_xy(front_rel, -90.0)
+
+    back_rel = _rotate_xy(front_rel, 180.0)
+
+    camera_specs = []
+    for view_name, rel in (
+        ("top", top_rel),
+        ("left", left_rel),
+        ("right", right_rel),
+        ("back", back_rel),
+    ):
+        camera_specs.append(
+            _build_fixed_camera_spec(
+                name=operation_config["camera_names"][view_name],
+                pos=center + rel,
+                target_pos=center,
+                camera_fovy=camera_fovy,
+            )
+        )
+    return camera_specs
+
+
+def _inject_operation_cameras(xml_str, operation_config):
+    if operation_config is None:
+        return xml_str
+
+    root = ET.fromstring(xml_str)
+    worldbody = root.find("worldbody")
+    if worldbody is None:
+        raise ValueError("XML missing <worldbody>, cannot inject operation cameras")
+
+    specs = _generate_operation_camera_specs(root, operation_config)
+    existing_names = {cam.get("name") for cam in root.iter("camera") if cam.get("name")}
+    _append_camera_specs(worldbody, specs, existing_names=existing_names)
+    return ET.tostring(root, encoding="utf8").decode("utf8")
+
+
 def _inject_trajectory_cameras(xml_str, trajectory_config):
     if trajectory_config is None:
         return xml_str
@@ -331,16 +519,8 @@ def _inject_trajectory_cameras(xml_str, trajectory_config):
         camera_fovy=camera_fovy,
     )
 
-    for spec in specs:
-        attrs = {
-            "name": spec["name"],
-            "mode": spec["mode"],
-            "pos": " ".join(f"{v:.6f}" for v in spec["pos"]),
-            "quat": " ".join(f"{v:.6f}" for v in spec["quat"]),
-        }
-        if "fovy" in spec and spec["fovy"] is not None:
-            attrs["fovy"] = spec["fovy"]
-        ET.SubElement(worldbody, "camera", attrs)
+    existing_names = {cam.get("name") for cam in root.iter("camera") if cam.get("name")}
+    _append_camera_specs(worldbody, specs, existing_names=existing_names)
 
     return ET.tostring(root, encoding="utf8").decode("utf8")
 
@@ -348,6 +528,7 @@ def _inject_trajectory_cameras(xml_str, trajectory_config):
 def install_model_xml_remapper(
     libero_assets_root=None,
     legacy_asset_markers=None,
+    operation_config=None,
     trajectory_config=None,
 ):
     legacy_asset_markers = tuple(legacy_asset_markers or DEFAULT_LEGACY_ASSET_MARKERS)
@@ -365,6 +546,7 @@ def install_model_xml_remapper(
             libero_assets_root=libero_assets_root,
             legacy_markers=legacy_asset_markers,
         )
+        xml = _inject_operation_cameras(xml, operation_config)
         return _inject_trajectory_cameras(xml, trajectory_config)
 
     replay_utils.libero_utils.postprocess_model_xml = patched_postprocess
@@ -456,8 +638,8 @@ def parse_args():
         default=None,
         help=(
             "Camera names used during replay rendering. "
-            "Without trajectory cameras, default follows source env_args camera_names. "
-            "With --camera-offset-file, default keeps original two cameras plus generated trajectory cameras."
+            "Without generated cameras, default follows source env_args camera_names. "
+            "With generated cameras enabled, default keeps the original two cameras plus appended camera names."
         ),
     )
     parser.add_argument(
@@ -471,6 +653,32 @@ def parse_args():
         type=int,
         default=DEFAULT_CAMERA_WIDTH,
         help="Replay render width.",
+    )
+    parser.add_argument(
+        "--add-operation-cameras",
+        dest="add_operation_cameras",
+        action="store_true",
+        default=True,
+        help=(
+            "Append four fixed operation cameras during replay: "
+            "operation_topview / operation_leftview / operation_rightview / operation_backview. "
+            "Enabled by default."
+        ),
+    )
+    parser.add_argument(
+        "--no-operation-cameras",
+        dest="add_operation_cameras",
+        action="store_false",
+        help="Disable the default operation cameras.",
+    )
+    parser.add_argument(
+        "--operation-camera-base-name",
+        type=str,
+        default="agentview",
+        help=(
+            "Fallback base camera used to estimate the operation center when "
+            "frontview / birdview / sideview are unavailable in XML."
+        ),
     )
     parser.add_argument(
         "--camera-offset-file",
@@ -527,9 +735,18 @@ def main():
     if args.trajectory_interp_samples < 2:
         raise ValueError("--trajectory-interp-samples must be >= 2")
 
-    camera_names = args.camera_names if args.camera_names else None
+    camera_names = list(args.camera_names) if args.camera_names else None
+    operation_config = None
+    operation_camera_names = []
     trajectory_config = None
     trajectory_camera_names = []
+
+    if args.add_operation_cameras:
+        operation_camera_names = list(DEFAULT_OPERATION_CAMERA_NAMES.values())
+        operation_config = {
+            "base_camera_name": args.operation_camera_base_name,
+            "camera_names": dict(DEFAULT_OPERATION_CAMERA_NAMES),
+        }
 
     if args.camera_offset_file:
         offset_file = os.path.abspath(os.path.expanduser(args.camera_offset_file))
@@ -548,16 +765,16 @@ def main():
             "camera_names": trajectory_camera_names,
         }
 
+    generated_camera_names = list(operation_camera_names) + list(trajectory_camera_names)
+    if generated_camera_names:
         if camera_names is None:
-            camera_names = list(DEFAULT_CAMERA_NAMES) + list(trajectory_camera_names)
-        else:
-            # Keep existing requested cameras while appending generated trajectory cameras.
-            camera_names = list(camera_names) + list(trajectory_camera_names)
-        camera_names = _dedupe_keep_order(camera_names)
+            camera_names = list(DEFAULT_CAMERA_NAMES)
+        camera_names = _dedupe_keep_order(list(camera_names) + generated_camera_names)
 
     robosuite_root, libero_assets_root, legacy_markers = install_model_xml_remapper(
         libero_assets_root=None,
         legacy_asset_markers=DEFAULT_LEGACY_ASSET_MARKERS,
+        operation_config=operation_config,
         trajectory_config=trajectory_config,
     )
 
@@ -590,6 +807,9 @@ def main():
         f"camera_width={args.camera_width}, "
         f"no_proprio={DEFAULT_NO_PROPRIO}"
     )
+    if operation_config is not None:
+        print(f"[info] operation camera base: {args.operation_camera_base_name}")
+        print(f"[info] generated operation cameras: {operation_camera_names}")
     if trajectory_config is not None:
         print(f"[info] trajectory offset file: {os.path.abspath(os.path.expanduser(args.camera_offset_file))}")
         print(f"[info] trajectory base camera: {args.camera_base_name}")
@@ -642,7 +862,7 @@ def main():
                 camera_width=args.camera_width,
             )
             validation = validate_reconstructed_file(src_path, dst_path)
-            if trajectory_config is not None and validation["errors"]:
+            if (operation_config is not None or trajectory_config is not None) and validation["errors"]:
                 ignored_obs_errors = []
                 kept_errors = []
                 for error in validation["errors"]:
@@ -653,7 +873,7 @@ def main():
                 if ignored_obs_errors:
                     print(
                         "[warning] ignored source-vs-rebuilt obs-key mismatch errors "
-                        "because trajectory cameras intentionally change observation keys."
+                        "because generated cameras intentionally change observation keys."
                     )
                 validation["errors"] = kept_errors
                 validation["ok"] = len(kept_errors) == 0
