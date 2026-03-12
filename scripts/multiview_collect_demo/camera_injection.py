@@ -228,6 +228,46 @@ def _lookat_quat_wxyz(camera_pos: np.ndarray, target_pos: np.ndarray) -> np.ndar
     )
 
 
+def _pitch_target_up(
+    camera_pos: np.ndarray,
+    target_pos: np.ndarray,
+    degrees: float,
+) -> np.ndarray:
+    """Rotates a camera target upward around the camera-local right axis."""
+
+    direction = np.asarray(target_pos, dtype=np.float64) - np.asarray(
+        camera_pos, dtype=np.float64
+    )
+    distance = float(np.linalg.norm(direction))
+    if distance <= 1e-12:
+        raise ValueError("Cannot pitch a zero-length camera direction")
+
+    direction = direction / distance
+    up_hint = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    right_axis = np.cross(direction, up_hint)
+    if np.linalg.norm(right_axis) <= 1e-8:
+        up_hint = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+        right_axis = np.cross(direction, up_hint)
+    right_axis = _normalize(right_axis)
+
+    pitched_direction = Rotation.from_rotvec(
+        np.deg2rad(degrees) * right_axis
+    ).apply(direction)
+    return np.asarray(camera_pos, dtype=np.float64) + pitched_direction * distance
+
+
+def _advance_along_view(
+    camera_pos: np.ndarray,
+    target_pos: np.ndarray,
+    distance: float,
+) -> np.ndarray:
+    """Moves a camera forward along its current view direction."""
+
+    return np.asarray(camera_pos, dtype=np.float64) + _normalize(
+        np.asarray(target_pos, dtype=np.float64) - np.asarray(camera_pos, dtype=np.float64)
+    ) * float(distance)
+
+
 def _camera_center_from_pose(base_pos: np.ndarray, base_quat_wxyz: np.ndarray) -> np.ndarray:
     """Approximates the look-at center from a camera world pose."""
 
@@ -441,30 +481,49 @@ def _generate_operation_camera_specs(
         right_rel = _rotate_xy(front_rel, -90.0)
 
     back_rel = _rotate_xy(front_rel, 180.0)
-    side_target = center + front_dir * (0.18 * horizontal_radius)
-    top_pos = center + top_rel + front_dir * (0.18 * horizontal_radius)
-    back_pos = center + back_rel + back_dir * (0.18 * horizontal_radius)
-    back_pos[2] += 0.18 * horizontal_radius
+
+    # Apply small, task-agnostic view corrections for the generated operation cameras:
+    # rotate the side cameras slightly further toward the front workspace, move the top
+    # camera closer to the agent/front direction, and pull the back camera forward so it
+    # stays outside walls in tighter scenes.
+    side_target = center + front_dir * (0.32 * horizontal_radius)
+    side_target[2] -= 0.08 * horizontal_radius
+    top_pos = center + top_rel + front_dir * (0.36 * horizontal_radius)
+    top_pos[2] -= 0.30 * horizontal_radius
+    left_pos = center + left_rel
+    left_pos[2] += 0.26 * horizontal_radius
+    right_pos = center + right_rel
+    right_pos[2] += 0.26 * horizontal_radius
+    back_pos = center + back_rel - back_dir * (0.95 * horizontal_radius)
+    back_pos[2] += 0.42 * horizontal_radius
+    top_target = center.copy()
+    top_target[2] -= 0.60 * horizontal_radius
+    top_pos = top_pos + _normalize(top_target - top_pos) * (0.22 * horizontal_radius)
+    left_target = _pitch_target_up(left_pos, side_target, 0.0)
+    right_target = _pitch_target_up(right_pos, side_target, 0.0)
+    left_pos = _advance_along_view(left_pos, left_target, 0.18 * horizontal_radius)
+    right_pos = _advance_along_view(right_pos, right_target, 0.18 * horizontal_radius)
     back_target = center.copy()
-    back_target[2] -= 0.12 * horizontal_radius
+    back_target[2] += 0.40 * horizontal_radius
+    back_target = _pitch_target_up(back_pos, back_target, 15.0)
 
     return [
         _build_fixed_camera_spec(
             name=config.camera_names["top"],
             pos=top_pos,
-            target_pos=center,
+            target_pos=top_target,
             camera_fovy=camera_fovy,
         ),
         _build_fixed_camera_spec(
             name=config.camera_names["left"],
-            pos=center + left_rel,
-            target_pos=side_target,
+            pos=left_pos,
+            target_pos=left_target,
             camera_fovy=camera_fovy,
         ),
         _build_fixed_camera_spec(
             name=config.camera_names["right"],
-            pos=center + right_rel,
-            target_pos=side_target,
+            pos=right_pos,
+            target_pos=right_target,
             camera_fovy=camera_fovy,
         ),
         _build_fixed_camera_spec(
