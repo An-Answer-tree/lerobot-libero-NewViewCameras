@@ -10,6 +10,7 @@
 #  robosuite==1.4.0
  bddl==1.0.1
  future==0.18.2 
+ Flask>=3.0,<4
  matplotlib==3.5.3 
  cloudpickle==2.1.0
  gym==0.25.2

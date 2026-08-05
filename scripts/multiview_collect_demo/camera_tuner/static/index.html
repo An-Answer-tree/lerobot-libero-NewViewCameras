@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LIBERO Camera Tuner</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <div id="app" class="app-shell" aria-busy="true">
+      <header class="app-header">
+        <div class="brand-block">
+          <span class="brand-mark" aria-hidden="true">L</span>
+          <div>
+            <h1>LIBERO Camera Tuner</h1>
+            <p id="task-context">Loading task inventory</p>
+          </div>
+        </div>
+        <div class="progress-block">
+          <div class="progress-copy">
+            <span>Calibration progress</span>
+            <strong id="progress-count">0 / 40</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <span id="progress-bar"></span>
+          </div>
+        </div>
+      </header>
+
+      <aside class="task-sidebar" aria-label="Task list">
+        <div class="panel-heading">
+          <h2>Tasks</h2>
+          <span id="suite-count">4 suites</span>
+        </div>
+        <nav id="task-list" class="task-list"></nav>
+      </aside>
+
+      <main class="workspace">
+        <div id="camera-tabs" class="camera-tabs" role="tablist"></div>
+        <section id="preview-stage" class="preview-stage" aria-label="Camera preview">
+          <div class="image-frame">
+            <img id="main-preview" alt="Current operation camera preview" draggable="false">
+            <div id="preview-loading" class="preview-loading">Rendering</div>
+          </div>
+          <div class="active-camera-label">
+            <span id="active-camera-dot"></span>
+            <strong id="active-camera-name">Back</strong>
+          </div>
+        </section>
+        <section id="thumbnail-strip" class="thumbnail-strip" aria-label="Camera thumbnails"></section>
+      </main>
+
+      <aside class="inspector">
+        <section class="inspector-section">
+          <div class="panel-heading">
+            <h2>Scene</h2>
+            <span id="demo-meta">Demo 1</span>
+          </div>
+          <label class="field-label" for="demo-select">Demonstration</label>
+          <select id="demo-select"></select>
+          <div class="field-row">
+            <label class="field-label" for="frame-slider">Frame</label>
+            <output id="frame-output" for="frame-slider">1 / 1</output>
+          </div>
+          <input id="frame-slider" type="range" min="0" max="0" value="0">
+          <input id="frame-number" class="frame-number" type="number" min="0" value="0" aria-label="Frame index">
+        </section>
+
+        <section class="inspector-section">
+          <div class="panel-heading">
+            <h2>World pose</h2>
+            <button id="reset-camera" class="icon-button" type="button" title="Reset active camera" aria-label="Reset active camera">&#8634;</button>
+          </div>
+          <div class="pose-grid" aria-label="Camera world pose">
+            <span>Position</span><code id="pose-position">0.000 0.000 0.000</code>
+            <span>Quat wxyz</span><code id="pose-quaternion">1.000 0.000 0.000 0.000</code>
+          </div>
+        </section>
+
+        <section class="inspector-section movement-section">
+          <div class="panel-heading">
+            <h2>Local movement</h2>
+            <div id="speed-control" class="segmented" aria-label="Movement speed">
+              <button type="button" data-speed="0.002">Fine</button>
+              <button type="button" data-speed="0.01" class="active">Med</button>
+              <button type="button" data-speed="0.05">Fast</button>
+            </div>
+          </div>
+          <div class="nudge-grid">
+            <button type="button" data-move="up" title="Move up" aria-label="Move up">&#8593;</button>
+            <button type="button" data-move="forward" title="Move forward" aria-label="Move forward">&#9650;</button>
+            <button type="button" data-move="down" title="Move down" aria-label="Move down">&#8595;</button>
+            <button type="button" data-move="left" title="Move left" aria-label="Move left">&#8592;</button>
+            <button type="button" data-move="backward" title="Move backward" aria-label="Move backward">&#9660;</button>
+            <button type="button" data-move="right" title="Move right" aria-label="Move right">&#8594;</button>
+          </div>
+        </section>
+
+        <section class="confirm-section">
+          <div id="save-state" class="save-state">
+            <span></span>
+            <strong>Unchanged</strong>
+          </div>
+          <button id="confirm-task" class="confirm-button" type="button">
+            <span>Confirm and next task</span>
+            <span aria-hidden="true">&#8594;</span>
+          </button>
+        </section>
+      </aside>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

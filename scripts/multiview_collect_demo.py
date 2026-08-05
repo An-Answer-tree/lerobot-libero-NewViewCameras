@@ -49,6 +49,10 @@ from multiview_collect_demo.camera_injection import (
     dedupe_keep_order,
     install_model_xml_remapper,
 )
+from multiview_collect_demo.task_camera_config import (
+    DEFAULT_TASK_CAMERA_CONFIG_PATH,
+    TaskCameraConfig,
+)
 
 DEFAULT_CAMERA_HEIGHT = 256
 DEFAULT_CAMERA_WIDTH = 256
@@ -90,6 +94,7 @@ class ReplayConfig:
     trajectory_camera_names: tuple[str, ...] = ()
     operation_camera_config: Optional[OperationCameraConfig] = None
     trajectory_camera_config: Optional[TrajectoryCameraConfig] = None
+    task_camera_config: Optional[TaskCameraConfig] = None
     divergence_threshold: float = DEFAULT_STATE_ERROR_THRESHOLD
     value_check_atol: float = DEFAULT_VALUE_CHECK_ATOL
     legacy_asset_markers: tuple[str, ...] = DEFAULT_LEGACY_ASSET_MARKERS
@@ -906,6 +911,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Disable the generated operation cameras.",
     )
     parser.add_argument(
+        "--task-camera-config",
+        type=str,
+        default=os.fspath(DEFAULT_TASK_CAMERA_CONFIG_PATH),
+        help=(
+            "Task-level operation camera YAML. Confirmed poses override the "
+            "heuristic cameras; unconfirmed tasks keep heuristic poses."
+        ),
+    )
+    parser.add_argument(
         "--no-trajectory-cameras",
         action="store_true",
         help="Disable the generated trajectory cameras.",
@@ -1031,6 +1045,13 @@ def build_replay_config(args: argparse.Namespace) -> ReplayConfig:
     operation_camera_names, operation_camera_config = build_operation_camera_settings(
         args
     )
+    task_camera_config = (
+        TaskCameraConfig.load(
+            Path(os.path.abspath(os.path.expanduser(args.task_camera_config)))
+        )
+        if operation_camera_config is not None
+        else None
+    )
     trajectory_camera_names_, trajectory_camera_config = (
         build_trajectory_camera_settings(args)
     )
@@ -1063,6 +1084,7 @@ def build_replay_config(args: argparse.Namespace) -> ReplayConfig:
         trajectory_camera_names=trajectory_camera_names_,
         operation_camera_config=operation_camera_config,
         trajectory_camera_config=trajectory_camera_config,
+        task_camera_config=task_camera_config,
     )
 
 
@@ -1434,6 +1456,12 @@ def report_run_context(
         reporter.write(
             f"[info] generated operation cameras: {list(config.operation_camera_names)}"
         )
+        if config.task_camera_config is not None:
+            reporter.write(
+                "[info] task camera config: "
+                f"{config.task_camera_config.path} "
+                f"({config.task_camera_config.confirmed_count} confirmed)"
+            )
     if config.trajectory_camera_config is not None:
         reporter.write(
             f"[info] trajectory offset file: "
@@ -1575,6 +1603,25 @@ def replay_task(task: TaskSpec, config: ReplayConfig) -> TaskReplayResult:
 
     target_path = task.target_demo_path(config.output_root)
     prepare_target_path(target_path, config.overwrite)
+
+    operation_config = config.operation_camera_config
+    if operation_config is not None:
+        camera_poses = (
+            config.task_camera_config.get_task(task.benchmark_name, task.task_name)
+            if config.task_camera_config is not None
+            else None
+        )
+        operation_config = OperationCameraConfig(
+            base_camera_name=operation_config.base_camera_name,
+            camera_names=operation_config.camera_names,
+            camera_poses=camera_poses or {},
+        )
+    install_model_xml_remapper(
+        libero_assets_root=None,
+        legacy_asset_markers=config.legacy_asset_markers,
+        operation_config=operation_config,
+        trajectory_config=config.trajectory_camera_config,
+    )
 
     try:
         summary = FileReplaySummary.from_mapping(

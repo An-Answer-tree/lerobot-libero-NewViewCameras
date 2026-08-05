@@ -1,0 +1,6 @@
+schema_version: 1
+suites:
+  libero_spatial: {}
+  libero_goal: {}
+  libero_object: {}
+  libero_10: {}
