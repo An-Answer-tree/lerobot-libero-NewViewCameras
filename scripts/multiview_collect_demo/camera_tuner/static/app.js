@@ -71,7 +71,7 @@ async function api(path, options = {}) {
   return payload;
 }
 
-function enqueueMutation(path, body) {
+function enqueueMutation(path, body, camerasToRefresh = null) {
   requestChain = requestChain
     .catch(() => undefined)
     .then(async () => {
@@ -80,7 +80,10 @@ function enqueueMutation(path, body) {
         body: JSON.stringify(body),
       });
       applyState(nextState);
-      await refreshImages(nextState.revision);
+      await refreshImages(
+        nextState.revision,
+        camerasToRefresh || nextState.camera_names,
+      );
     })
     .catch((error) => showToast(error.message, true));
   return requestChain;
@@ -195,10 +198,13 @@ function selectCamera(camera) {
   renderPose();
 }
 
-async function refreshImages(revision) {
-  elements.previewLoading.classList.remove("hidden");
+async function refreshImages(revision, cameras = state.camera_names) {
+  const uniqueCameras = [...new Set(cameras)];
+  if (uniqueCameras.includes(activeCamera)) {
+    elements.previewLoading.classList.remove("hidden");
+  }
   await Promise.all(
-    state.camera_names.map(async (camera) => {
+    uniqueCameras.map(async (camera) => {
       const response = await fetch(`/api/render/${camera}.jpg?revision=${revision}`, {
         cache: "no-store",
       });
@@ -208,6 +214,7 @@ async function refreshImages(revision) {
       const previousUrl = imageUrls.get(camera);
       if (previousUrl) URL.revokeObjectURL(previousUrl);
       imageUrls.set(camera, URL.createObjectURL(blob));
+      updateVisibleImages();
     }),
   );
   if (state && state.revision === revision) {
@@ -231,12 +238,13 @@ function loadTask(taskId) {
 }
 
 function move(direction, multiplier = 1) {
+  const camera = activeCamera;
   const vector = movementVectors[direction].map((value) => value * movementSpeed * multiplier);
   enqueueMutation("/api/adjust", {
-    camera: activeCamera,
+    camera,
     translation: vector,
     rotation_degrees: [0, 0, 0],
-  });
+  }, [camera]);
 }
 
 function showToast(message, isError = false) {
@@ -260,7 +268,8 @@ elements.frameSlider.addEventListener("change", (event) => commitFrame(event.tar
 elements.frameNumber.addEventListener("change", (event) => commitFrame(event.target.value));
 
 elements.resetCamera.addEventListener("click", () => {
-  enqueueMutation("/api/camera/reset", { camera: activeCamera });
+  const camera = activeCamera;
+  enqueueMutation("/api/camera/reset", { camera }, [camera]);
 });
 
 elements.speedControl.addEventListener("click", (event) => {
@@ -310,11 +319,12 @@ elements.imageFrame.addEventListener("pointerup", (event) => {
   dragStart = null;
   elements.imageFrame.classList.remove("dragging");
   if (Math.abs(dx) + Math.abs(dy) < 2) return;
+  const camera = activeCamera;
   enqueueMutation("/api/adjust", {
-    camera: activeCamera,
+    camera,
     translation: [0, 0, 0],
     rotation_degrees: [dy * 0.16, -dx * 0.16, 0],
-  });
+  }, [camera]);
 });
 
 elements.imageFrame.addEventListener("pointercancel", () => {
