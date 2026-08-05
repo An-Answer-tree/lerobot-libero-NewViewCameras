@@ -72,10 +72,26 @@
             <h2>World pose</h2>
             <button id="reset-camera" class="icon-button" type="button" title="Reset active camera" aria-label="Reset active camera">&#8634;</button>
           </div>
-          <div class="pose-grid" aria-label="Camera world pose">
-            <span>Position</span><code id="pose-position">0.000 0.000 0.000</code>
-            <span>Quat wxyz</span><code id="pose-quaternion">1.000 0.000 0.000 0.000</code>
-          </div>
+          <form id="pose-form" class="pose-form" aria-label="Camera world pose">
+            <div class="pose-field-group">
+              <span class="pose-group-label">Position</span>
+              <div class="pose-input-row position-inputs">
+                <label><span>X</span><input type="number" step="any" required data-pose-group="position" data-pose-index="0" aria-label="World position X"></label>
+                <label><span>Y</span><input type="number" step="any" required data-pose-group="position" data-pose-index="1" aria-label="World position Y"></label>
+                <label><span>Z</span><input type="number" step="any" required data-pose-group="position" data-pose-index="2" aria-label="World position Z"></label>
+              </div>
+            </div>
+            <div class="pose-field-group">
+              <span class="pose-group-label">Quaternion wxyz</span>
+              <div class="pose-input-row quaternion-inputs">
+                <label><span>W</span><input type="number" step="any" required data-pose-group="quaternion_wxyz" data-pose-index="0" aria-label="Quaternion W"></label>
+                <label><span>X</span><input type="number" step="any" required data-pose-group="quaternion_wxyz" data-pose-index="1" aria-label="Quaternion X"></label>
+                <label><span>Y</span><input type="number" step="any" required data-pose-group="quaternion_wxyz" data-pose-index="2" aria-label="Quaternion Y"></label>
+                <label><span>Z</span><input type="number" step="any" required data-pose-group="quaternion_wxyz" data-pose-index="3" aria-label="Quaternion Z"></label>
+              </div>
+            </div>
+            <button id="apply-pose" class="apply-pose-button" type="submit">Apply pose</button>
+          </form>
         </section>
 
         <section class="inspector-section movement-section">

@@ -48,6 +48,9 @@ ssh -L 19985:127.0.0.1:19985 <remote-host>
   `Q` / `E` move down and up in the active camera's local frame.
 - Drag the main preview to change yaw and pitch. Use the mouse wheel to move
   forward or backward.
+- Enter `x y z` and quaternion `w x y z` values under World pose, then select
+  Apply pose or press Enter to set the active camera exactly. The quaternion is
+  normalized after submission; a zero-length quaternion is rejected.
 - Fine, medium, and fast set the translation increment. Holding Shift while
   using a movement key multiplies the current increment by five.
 - Reset restores only the active camera to the pose loaded for the task.

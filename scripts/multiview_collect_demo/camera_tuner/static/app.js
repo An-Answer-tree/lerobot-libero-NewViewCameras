@@ -51,8 +51,9 @@ const elements = {
   frameSlider: document.querySelector("#frame-slider"),
   frameNumber: document.querySelector("#frame-number"),
   frameOutput: document.querySelector("#frame-output"),
-  posePosition: document.querySelector("#pose-position"),
-  poseQuaternion: document.querySelector("#pose-quaternion"),
+  poseForm: document.querySelector("#pose-form"),
+  poseInputs: [...document.querySelectorAll("[data-pose-group]")],
+  applyPose: document.querySelector("#apply-pose"),
   resetCamera: document.querySelector("#reset-camera"),
   speedControl: document.querySelector("#speed-control"),
   saveState: document.querySelector("#save-state"),
@@ -194,8 +195,9 @@ function renderSceneControls() {
 
 function renderPose() {
   const pose = state.cameras[activeCamera];
-  elements.posePosition.textContent = pose.position.map(formatNumber).join("  ");
-  elements.poseQuaternion.textContent = pose.quaternion_wxyz.map(formatNumber).join("  ");
+  elements.poseInputs.forEach((input) => {
+    input.value = formatNumber(pose[input.dataset.poseGroup][Number(input.dataset.poseIndex)]);
+  });
 }
 
 function formatNumber(value) {
@@ -300,6 +302,35 @@ elements.frameNumber.addEventListener("change", (event) => commitFrame(event.tar
 elements.resetCamera.addEventListener("click", () => {
   const camera = activeCamera;
   enqueueMutation("/api/camera/reset", { camera }, { cameras: [camera] });
+});
+
+elements.poseForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const camera = activeCamera;
+  const values = Object.fromEntries(
+    ["position", "quaternion_wxyz"].map((group) => [
+      group,
+      elements.poseInputs
+        .filter((input) => input.dataset.poseGroup === group)
+        .map((input) => Number(input.value)),
+    ]),
+  );
+  if (![...values.position, ...values.quaternion_wxyz].every(Number.isFinite)) {
+    showToast("Pose values must be finite numbers", true);
+    return;
+  }
+  elements.applyPose.disabled = true;
+  enqueueMutation("/api/camera/pose", {
+    camera,
+    position: values.position,
+    quaternion_wxyz: values.quaternion_wxyz,
+  }, {
+    cameras: [camera],
+    onSuccess: () => showToast("Camera pose applied"),
+    onSettled: () => {
+      elements.applyPose.disabled = false;
+    },
+  });
 });
 
 elements.speedControl.addEventListener("click", (event) => {

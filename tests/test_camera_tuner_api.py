@@ -90,6 +90,10 @@ class FakeSession:
         self.camera_poses[camera_name] = updated
         return updated
 
+    def set_camera_pose(self, camera_name, pose):
+        self.camera_poses[camera_name] = pose
+        return pose
+
     def reset_camera(self, camera_name):
         self.camera_poses[camera_name] = self.initial_camera_poses[camera_name]
         return self.camera_poses[camera_name]
@@ -159,6 +163,36 @@ def test_api_task_adjust_demo_frame_render_and_errors(tmp_path: Path) -> None:
     assert client.post("/api/task", json={"task_id": "bad/task"}).status_code == 400
     assert client.post(
         "/api/adjust", json={"camera": "operation_backview", "translation": [1, 2]}
+    ).status_code == 400
+
+    posed = client.post(
+        "/api/camera/pose",
+        json={
+            "camera": "operation_backview",
+            "position": [1.25, -0.5, 2.75],
+            "quaternion_wxyz": [2, 0, 0, 0],
+        },
+    ).get_json()
+    assert posed["dirty"] is True
+    assert posed["cameras"]["operation_backview"] == {
+        "position": [1.25, -0.5, 2.75],
+        "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
+    }
+    assert client.post(
+        "/api/camera/pose",
+        json={
+            "camera": "operation_backview",
+            "position": [0, 0, 0],
+            "quaternion_wxyz": [0, 0, 0, 0],
+        },
+    ).status_code == 400
+    assert client.post(
+        "/api/camera/pose",
+        json={
+            "camera": "not-a-camera",
+            "position": [0, 0, 0],
+            "quaternion_wxyz": [1, 0, 0, 0],
+        },
     ).status_code == 400
 
 

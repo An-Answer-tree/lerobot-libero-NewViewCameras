@@ -127,6 +127,27 @@ class CameraTunerController:
         self.revision += 1
         return self.state()
 
+    def set_camera_pose(
+        self,
+        camera_name: str,
+        position: Sequence[float],
+        quaternion_wxyz: Sequence[float],
+    ) -> dict[str, Any]:
+        """Sets one camera to a validated absolute world pose."""
+
+        if camera_name not in OPERATION_CAMERA_NAMES:
+            raise ValueError(f"Unknown operation camera: {camera_name}")
+        pose = CameraPose.from_mapping(
+            {
+                "position": position,
+                "quaternion_wxyz": quaternion_wxyz,
+            }
+        )
+        self.session.set_camera_pose(camera_name, pose)
+        self.dirty = True
+        self.revision += 1
+        return self.state()
+
     def reset_camera(self, camera_name: str) -> dict[str, Any]:
         """Restores one camera to its task-load pose."""
 
@@ -319,6 +340,17 @@ def create_app(
     def reset_camera() -> Response:
         body = _json_body()
         return jsonify(controller.reset_camera(str(body.get("camera", ""))))
+
+    @app.post("/api/camera/pose")
+    def set_camera_pose() -> Response:
+        body = _json_body()
+        return jsonify(
+            controller.set_camera_pose(
+                str(body.get("camera", "")),
+                body.get("position"),
+                body.get("quaternion_wxyz"),
+            )
+        )
 
     @app.get("/api/render/<camera_name>.jpg")
     def render_camera(camera_name: str) -> Response:

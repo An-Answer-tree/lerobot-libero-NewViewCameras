@@ -346,6 +346,14 @@ class MujocoCameraSession:
         self._apply_camera_poses()
         return updated
 
+    def set_camera_pose(self, camera_name: str, pose: CameraPose) -> CameraPose:
+        """Sets one camera to an absolute world pose."""
+
+        self._require_camera(camera_name)
+        self.camera_poses[camera_name] = pose
+        self._apply_camera_poses()
+        return pose
+
     def reset_camera(self, camera_name: str) -> CameraPose:
         """Restores one camera to the pose captured when the task was loaded."""
 
