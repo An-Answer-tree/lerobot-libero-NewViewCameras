@@ -30,4 +30,5 @@ def test_help_does_not_load_rendering_stack(help_flag: str) -> None:
     assert "-h, --help" in result.stdout
     assert "--source-root" in result.stdout
     assert "--render-size" in result.stdout
+    assert "--model-cache-limit-gb" in result.stdout
     assert "robosuite WARNING" not in result.stdout + result.stderr

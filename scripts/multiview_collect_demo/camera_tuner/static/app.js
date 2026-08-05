@@ -31,6 +31,7 @@ let movementSpeed = 0.01;
 let requestChain = Promise.resolve();
 let toastTimer = null;
 let dragStart = null;
+let taskSwitchPending = false;
 const imageUrls = new Map();
 
 const elements = {
@@ -73,7 +74,12 @@ async function api(path, options = {}) {
   return payload;
 }
 
-function enqueueMutation(path, body, camerasToRefresh = null, onSuccess = null) {
+function enqueueMutation(path, body, options = {}) {
+  const {
+    cameras: camerasToRefresh = null,
+    onSuccess = null,
+    onSettled = null,
+  } = options;
   requestChain = requestChain
     .catch(() => undefined)
     .then(async () => {
@@ -86,7 +92,10 @@ function enqueueMutation(path, body, camerasToRefresh = null, onSuccess = null) 
       if (cameras.length > 0) await refreshImages(nextState.revision, cameras);
       if (onSuccess) onSuccess(nextState);
     })
-    .catch((error) => showToast(error.message, true));
+    .catch((error) => showToast(error.message, true))
+    .finally(() => {
+      if (onSettled) onSettled();
+    });
   return requestChain;
 }
 
@@ -234,8 +243,28 @@ function updateVisibleImages() {
 }
 
 function loadTask(taskId) {
+  if (taskSwitchPending || taskId === state.current_task.id) return;
   if (state.dirty && !window.confirm("Discard unsaved camera changes?")) return;
-  enqueueMutation("/api/task", { task_id: taskId });
+  taskSwitchPending = true;
+  elements.app.setAttribute("aria-busy", "true");
+  elements.previewLoading.textContent = "Loading task";
+  elements.previewLoading.classList.remove("hidden");
+  elements.taskList.querySelectorAll(".task-item").forEach((button) => {
+    button.disabled = true;
+    button.classList.toggle("loading", button.dataset.taskId === taskId);
+  });
+  enqueueMutation("/api/task", { task_id: taskId }, {
+    onSettled: () => {
+      taskSwitchPending = false;
+      elements.app.setAttribute("aria-busy", "false");
+      elements.previewLoading.textContent = "Rendering";
+      elements.previewLoading.classList.add("hidden");
+      elements.taskList.querySelectorAll(".task-item").forEach((button) => {
+        button.disabled = false;
+        button.classList.remove("loading");
+      });
+    },
+  });
 }
 
 function move(direction, multiplier = 1) {
@@ -245,7 +274,7 @@ function move(direction, multiplier = 1) {
     camera,
     translation: vector,
     rotation_degrees: [0, 0, 0],
-  }, [camera]);
+  }, { cameras: [camera] });
 }
 
 function showToast(message, isError = false) {
@@ -270,7 +299,7 @@ elements.frameNumber.addEventListener("change", (event) => commitFrame(event.tar
 
 elements.resetCamera.addEventListener("click", () => {
   const camera = activeCamera;
-  enqueueMutation("/api/camera/reset", { camera }, [camera]);
+  enqueueMutation("/api/camera/reset", { camera }, { cameras: [camera] });
 });
 
 elements.speedControl.addEventListener("click", (event) => {
@@ -288,15 +317,18 @@ document.querySelector(".nudge-grid").addEventListener("click", (event) => {
 });
 
 elements.confirmTask.addEventListener("click", () => {
-  enqueueMutation("/api/confirm", {}, null, (nextState) => {
-    if (nextState.completed) showToast("Calibration complete: 40 / 40");
-    else showToast("Task cameras confirmed");
+  enqueueMutation("/api/confirm", {}, {
+    onSuccess: (nextState) => {
+      if (nextState.completed) showToast("Calibration complete: 40 / 40");
+      else showToast("Task cameras confirmed");
+    },
   });
 });
 
 elements.saveProgress.addEventListener("click", () => {
-  enqueueMutation("/api/save", {}, [], () => {
-    showToast("Task saved; you can continue editing");
+  enqueueMutation("/api/save", {}, {
+    cameras: [],
+    onSuccess: () => showToast("Task saved; you can continue editing"),
   });
 });
 
@@ -344,7 +376,7 @@ elements.imageFrame.addEventListener("pointerup", (event) => {
     camera,
     translation: [0, 0, 0],
     rotation_degrees: [dy * 0.16, -dx * 0.16, 0],
-  }, [camera]);
+  }, { cameras: [camera] });
 });
 
 elements.imageFrame.addEventListener("pointercancel", () => {

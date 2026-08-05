@@ -212,6 +212,16 @@ h1 {
   color: var(--text);
 }
 
+.task-item:disabled {
+  cursor: wait;
+}
+
+.task-item.loading {
+  box-shadow: inset 3px 0 var(--amber);
+  background: #282720;
+  color: var(--text);
+}
+
 .task-item.active {
   box-shadow: inset 3px 0 var(--cyan);
   background: #242a2e;

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import numpy as np
 
@@ -13,6 +14,7 @@ from multiview_collect_demo.camera_injection import (
     _inject_operation_cameras,
 )
 from multiview_collect_demo.camera_tuner.session import (
+    MujocoCameraSession,
     attach_operation_cameras_to_mocap,
 )
 from multiview_collect_demo.task_camera_config import CameraPose
@@ -86,3 +88,22 @@ def test_all_operation_cameras_are_attached_to_mocap_bodies() -> None:
         body.find("camera").get("name") for body in bodies
     } == set(DEFAULT_OPERATION_CAMERA_NAMES.values())
     assert all(body.find("camera").get("pos") == "0 0 0" for body in bodies)
+
+
+def test_model_cache_key_and_size_limit(tmp_path: Path) -> None:
+    session = MujocoCameraSession(
+        model_cache_dir=tmp_path,
+        model_cache_limit_gb=20 / 1024**3,
+    )
+    first_path = session._model_cache_path("<mujoco model='first'/>")
+    second_path = session._model_cache_path("<mujoco model='second'/>")
+
+    assert first_path != second_path
+    assert first_path.suffix == ".mjb"
+
+    first_path.write_bytes(b"a" * 12)
+    second_path.write_bytes(b"b" * 12)
+    session._prune_model_cache(second_path)
+
+    assert not first_path.exists()
+    assert second_path.exists()

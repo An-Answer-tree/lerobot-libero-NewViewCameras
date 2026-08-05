@@ -29,6 +29,11 @@ The server validates all 40 source files before creating a MuJoCo session. Use
 Other useful options are `--config`, `--render-size`, `--host`, and `--port`.
 The defaults are a `512x512` render and `127.0.0.1:19985`.
 
+The first visit to a task compiles its `demo_0` XML and stores a MuJoCo binary
+model under `/tmp/libero-camera-tuner-models`. Later visits and service restarts
+reuse that cache. The default cache limit is 12 GiB with oldest-model eviction;
+change it with `--model-cache-limit-gb`, or pass zero to disable the cache.
+
 The service intentionally binds to loopback. From a local machine, forward it
 through SSH and open `http://127.0.0.1:19985`:
 

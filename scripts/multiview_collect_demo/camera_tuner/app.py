@@ -253,6 +253,8 @@ def create_app(
     source_root: Optional[Path] = None,
     config_path: Path = DEFAULT_TASK_CAMERA_CONFIG_PATH,
     render_size: int = 512,
+    model_cache_dir: Optional[Path] = Path("/tmp/libero-camera-tuner-models"),
+    model_cache_limit_gb: float = 12.0,
     validate_datasets: bool = True,
 ) -> Flask:
     """Creates the Flask app, optionally with a test-provided controller."""
@@ -266,7 +268,11 @@ def create_app(
         controller = CameraTunerController(
             source_root=resolved_source_root,
             config=TaskCameraConfig.load(config_path),
-            session_factory=lambda: MujocoCameraSession(render_size=render_size),
+            session_factory=lambda: MujocoCameraSession(
+                render_size=render_size,
+                model_cache_dir=model_cache_dir,
+                model_cache_limit_gb=model_cache_limit_gb,
+            ),
             validate_datasets=validate_datasets,
         )
 

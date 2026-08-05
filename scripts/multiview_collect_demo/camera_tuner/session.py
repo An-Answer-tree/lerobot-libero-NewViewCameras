@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import os
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Mapping, Optional
 
 import h5py
+import mujoco
 import numpy as np
 from PIL import Image
+from robosuite.utils.binding_utils import MjRenderContext, MjSim
 from scipy.spatial.transform import Rotation
 
 import replay_dataset_utils as replay_utils
@@ -100,11 +105,20 @@ def attach_operation_cameras_to_mocap(xml_str: str) -> tuple[str, dict[str, Came
 
 
 class MujocoCameraSession:
-    """Owns the current HDF5 demo, replay environment, and four camera poses."""
+    """Owns the current HDF5 demo, MuJoCo simulation, and camera poses."""
 
-    def __init__(self, render_size: int = 512) -> None:
+    def __init__(
+        self,
+        render_size: int = 512,
+        model_cache_dir: Optional[Path] = Path("/tmp/libero-camera-tuner-models"),
+        model_cache_limit_gb: float = 12.0,
+    ) -> None:
         self.render_size = int(render_size)
-        self.env = None
+        self.model_cache_dir = (
+            Path(model_cache_dir) if model_cache_dir is not None else None
+        )
+        self.model_cache_limit_bytes = int(model_cache_limit_gb * 1024**3)
+        self.sim: Optional[MjSim] = None
         self.task: Optional[TaskRecord] = None
         self.dataset_path: Optional[Path] = None
         self.demo_keys: list[str] = []
@@ -116,11 +130,11 @@ class MujocoCameraSession:
         self.initial_camera_poses: dict[str, CameraPose] = {}
 
     def close(self) -> None:
-        """Closes the active replay environment."""
+        """Releases the active simulation and render context."""
 
-        if self.env is not None:
-            self.env.close()
-            self.env = None
+        if self.sim is not None:
+            self.sim.free()
+            self.sim = None
 
     def load_task(
         self,
@@ -141,12 +155,6 @@ class MujocoCameraSession:
             self.demo_lengths = [
                 int(len(data_group[demo_key]["states"])) for demo_key in self.demo_keys
             ]
-            self.env, _ = replay_utils.build_replay_env(
-                data_group,
-                camera_names=["agentview"],
-                camera_height=self.render_size,
-                camera_width=self.render_size,
-            )
 
         self.camera_poses = dict(saved_poses or {})
         try:
@@ -157,7 +165,7 @@ class MujocoCameraSession:
         self.initial_camera_poses = dict(self.camera_poses)
 
     def _load_demo(self, demo_index: int, preserve_camera_poses: bool = True) -> None:
-        if self.env is None or self.dataset_path is None:
+        if self.dataset_path is None:
             raise RuntimeError("No task is loaded")
         if not 0 <= demo_index < len(self.demo_keys):
             raise ValueError(f"Demo index out of range: {demo_index}")
@@ -170,25 +178,104 @@ class MujocoCameraSession:
         if len(states) == 0:
             raise ValueError(f"Demo has no states: {self.demo_keys[demo_index]}")
 
-        install_model_xml_remapper(
-            operation_config=OperationCameraConfig(camera_poses=previous_poses)
-        )
+        install_model_xml_remapper(operation_config=OperationCameraConfig())
         processed_xml = replay_utils.libero_utils.postprocess_model_xml(model_xml, {})
         tunable_xml, xml_poses = attach_operation_cameras_to_mocap(processed_xml)
+        self.close()
         try:
-            self.env.reset_from_xml_string(tunable_xml)
+            model = self._load_or_compile_model(
+                tunable_xml,
+                use_cache=demo_index == 0,
+            )
         except ValueError as exc:
             patched_xml = _patch_scene4_xml(tunable_xml, exc)
             if patched_xml is None:
                 raise
-            self.env.reset_from_xml_string(patched_xml)
+            model = self._load_or_compile_model(
+                patched_xml,
+                use_cache=demo_index == 0,
+            )
+        self.sim = MjSim(model)
+        try:
+            MjRenderContext(
+                self.sim,
+                offscreen=True,
+                max_width=self.render_size,
+                max_height=self.render_size,
+            )
+        except Exception:
+            self.close()
+            raise
 
-        self.env.sim.reset()
+        self.sim.reset()
         self.current_states = states
         self.demo_index = demo_index
         self.frame_index = 0
         self.camera_poses = previous_poses or xml_poses
         self._restore_frame(0)
+
+    def _load_or_compile_model(
+        self,
+        model_xml: str,
+        *,
+        use_cache: bool,
+    ) -> mujoco.MjModel:
+        cache_path = self._model_cache_path(model_xml) if use_cache else None
+        if cache_path is not None and cache_path.is_file():
+            try:
+                model = mujoco.MjModel.from_binary_path(os.fspath(cache_path))
+            except Exception:
+                cache_path.unlink(missing_ok=True)
+            else:
+                cache_path.touch()
+                return model
+
+        model = mujoco.MjModel.from_xml_string(model_xml)
+        if cache_path is not None:
+            self._save_cached_model(model, cache_path)
+        return model
+
+    def _model_cache_path(self, model_xml: str) -> Optional[Path]:
+        if self.model_cache_dir is None or self.model_cache_limit_bytes <= 0:
+            return None
+        cache_key = hashlib.sha256(
+            f"mujoco-{mujoco.__version__}\0{model_xml}".encode("utf-8")
+        ).hexdigest()
+        return self.model_cache_dir / f"{cache_key}.mjb"
+
+    def _save_cached_model(self, model: mujoco.MjModel, cache_path: Path) -> None:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            file_descriptor, temp_path_str = tempfile.mkstemp(
+                prefix=f".{cache_path.name}.",
+                suffix=".tmp",
+                dir=cache_path.parent,
+            )
+            os.close(file_descriptor)
+            temp_path = Path(temp_path_str)
+            try:
+                mujoco.mj_saveModel(model, os.fspath(temp_path), None)
+                os.replace(temp_path, cache_path)
+            finally:
+                temp_path.unlink(missing_ok=True)
+            self._prune_model_cache(cache_path)
+        except OSError:
+            return
+
+    def _prune_model_cache(self, keep_path: Path) -> None:
+        cache_files = sorted(
+            self.model_cache_dir.glob("*.mjb"),
+            key=lambda path: path.stat().st_mtime,
+        )
+        total_size = sum(path.stat().st_size for path in cache_files)
+        for cache_file in cache_files:
+            if total_size <= self.model_cache_limit_bytes:
+                break
+            if cache_file == keep_path:
+                continue
+            file_size = cache_file.stat().st_size
+            cache_file.unlink(missing_ok=True)
+            total_size -= file_size
 
     def switch_demo(self, demo_index: int) -> None:
         """Rebuilds the selected demo XML while preserving world camera poses."""
@@ -205,18 +292,18 @@ class MujocoCameraSession:
         self._restore_frame(int(frame_index))
 
     def _restore_frame(self, frame_index: int) -> None:
-        self.env.sim.set_state_from_flattened(self.current_states[frame_index])
+        self.sim.set_state_from_flattened(self.current_states[frame_index])
         self.frame_index = frame_index
         self._apply_camera_poses()
 
     def _apply_camera_poses(self) -> None:
         for camera_name, pose in self.camera_poses.items():
             body_name = f"camera_tuner_{camera_name}_mocap"
-            self.env.sim.data.set_mocap_pos(body_name, np.asarray(pose.position))
-            self.env.sim.data.set_mocap_quat(
+            self.sim.data.set_mocap_pos(body_name, np.asarray(pose.position))
+            self.sim.data.set_mocap_quat(
                 body_name, np.asarray(pose.quaternion_wxyz)
             )
-        self.env.sim.forward()
+        self.sim.forward()
 
     def adjust_camera(
         self,
@@ -269,7 +356,7 @@ class MujocoCameraSession:
         """Renders one square RGB view as a JPEG byte string."""
 
         self._require_camera(camera_name)
-        image = self.env.sim.render(
+        image = self.sim.render(
             camera_name=camera_name,
             width=self.render_size,
             height=self.render_size,

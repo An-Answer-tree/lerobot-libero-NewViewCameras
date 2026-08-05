@@ -49,6 +49,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=512,
         help="square preview image size in pixels",
     )
+    parser.add_argument(
+        "--model-cache-dir",
+        type=Path,
+        default=Path("/tmp/libero-camera-tuner-models"),
+        help="directory for compiled demo_0 MuJoCo models",
+    )
+    parser.add_argument(
+        "--model-cache-limit-gb",
+        type=float,
+        default=12.0,
+        help="maximum compiled-model cache size; zero disables caching",
+    )
     return parser
 
 
@@ -65,6 +77,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             source_root=args.source_root,
             config_path=args.config,
             render_size=args.render_size,
+            model_cache_dir=args.model_cache_dir,
+            model_cache_limit_gb=args.model_cache_limit_gb,
         )
     except FileNotFoundError as exc:
         parser.error(str(exc))
