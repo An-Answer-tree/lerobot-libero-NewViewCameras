@@ -197,12 +197,14 @@ class MujocoCameraSession:
             )
         self.sim = MjSim(model)
         try:
-            MjRenderContext(
+            render_context = MjRenderContext(
                 self.sim,
                 offscreen=True,
                 max_width=self.render_size,
                 max_height=self.render_size,
             )
+            render_context.vopt.geomgroup[0] = 0
+            render_context.vopt.geomgroup[1] = 1
         except Exception:
             self.close()
             raise
