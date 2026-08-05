@@ -14,7 +14,7 @@ for search_path in (REPO_ROOT, Path(__file__).resolve().parent, ROBOSUITE_ROOT):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-from multiview_collect_demo.camera_tuner.app import main
+from multiview_collect_demo.camera_tuner.cli import main
 
 
 if __name__ == "__main__":

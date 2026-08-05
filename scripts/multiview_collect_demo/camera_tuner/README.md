@@ -15,6 +15,15 @@ run:
 python scripts/tune_multiview_cameras.py
 ```
 
+No `MUJOCO_GL` override is required on the current server. The launcher leaves
+the variable untouched and uses the rendering backend available in the active
+environment. Show all launch options without importing LIBERO or MuJoCo:
+
+```bash
+python scripts/tune_multiview_cameras.py -h
+python scripts/tune_multiview_cameras.py --help
+```
+
 The server validates all 40 source files before creating a MuJoCo session. Use
 `--source-root` when the datasets are not under `get_libero_path("datasets")`.
 Other useful options are `--config`, `--render-size`, `--host`, and `--port`.

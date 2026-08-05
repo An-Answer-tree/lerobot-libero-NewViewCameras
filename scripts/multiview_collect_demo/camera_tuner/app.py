@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
@@ -354,38 +353,3 @@ def create_app(
         return jsonify({"error": str(error)}), 404
 
     return app
-
-
-def build_arg_parser() -> argparse.ArgumentParser:
-    """Builds the camera tuner command-line parser."""
-
-    parser = argparse.ArgumentParser(description="Tune LIBERO operation cameras")
-    parser.add_argument("--source-root", type=Path, default=None)
-    parser.add_argument(
-        "--config", type=Path, default=DEFAULT_TASK_CAMERA_CONFIG_PATH
-    )
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=19985)
-    parser.add_argument("--render-size", type=int, default=512)
-    return parser
-
-
-def main(argv: Optional[Sequence[str]] = None) -> None:
-    """Validates the 40 datasets and starts a single-threaded Flask server."""
-
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-    try:
-        app = create_app(
-            source_root=args.source_root,
-            config_path=args.config,
-            render_size=args.render_size,
-        )
-    except FileNotFoundError as exc:
-        parser.error(str(exc))
-
-    controller = app.config["CAMERA_TUNER_CONTROLLER"]
-    try:
-        app.run(host=args.host, port=args.port, threaded=False, debug=False)
-    finally:
-        controller.close()
