@@ -39,6 +39,10 @@ ssh -L 19985:127.0.0.1:19985 <remote-host>
 - Reset restores only the active camera to the pose loaded for the task.
 - Demo changes rebuild that demo's XML while preserving all current camera
   poses. Frame changes only restore `states[t]`.
+- Save task atomically stores all four current poses without changing tasks.
+  The saved task remains editable and can be overwritten by saving it again.
+- Download YAML exports all tasks saved so far. Unsaved edits are intentionally
+  excluded from the downloaded snapshot.
 - Confirm writes all four poses together and advances to the next unconfirmed
   task. Leaving with unsaved changes triggers a browser warning.
 
@@ -75,7 +79,8 @@ confirmed.
 
 To resume, launch the same command with the same `--config`. The first
 unconfirmed task opens automatically; confirmed tasks remain available in the
-left task list.
+left task list and can be edited and saved again. Downloaded snapshots can be
+used as the value of `--config` when resuming in a different checkout.
 
 ## Multiview generator integration
 

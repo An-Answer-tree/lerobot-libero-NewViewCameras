@@ -55,6 +55,8 @@ const elements = {
   resetCamera: document.querySelector("#reset-camera"),
   speedControl: document.querySelector("#speed-control"),
   saveState: document.querySelector("#save-state"),
+  saveProgress: document.querySelector("#save-progress"),
+  downloadConfig: document.querySelector("#download-config"),
   confirmTask: document.querySelector("#confirm-task"),
   toast: document.querySelector("#toast"),
 };
@@ -71,7 +73,7 @@ async function api(path, options = {}) {
   return payload;
 }
 
-function enqueueMutation(path, body, camerasToRefresh = null) {
+function enqueueMutation(path, body, camerasToRefresh = null, onSuccess = null) {
   requestChain = requestChain
     .catch(() => undefined)
     .then(async () => {
@@ -80,10 +82,9 @@ function enqueueMutation(path, body, camerasToRefresh = null) {
         body: JSON.stringify(body),
       });
       applyState(nextState);
-      await refreshImages(
-        nextState.revision,
-        camerasToRefresh || nextState.camera_names,
-      );
+      const cameras = camerasToRefresh ?? nextState.camera_names;
+      if (cameras.length > 0) await refreshImages(nextState.revision, cameras);
+      if (onSuccess) onSuccess(nextState);
     })
     .catch((error) => showToast(error.message, true));
   return requestChain;
@@ -286,10 +287,29 @@ document.querySelector(".nudge-grid").addEventListener("click", (event) => {
   if (button) move(button.dataset.move);
 });
 
-elements.confirmTask.addEventListener("click", async () => {
-  await enqueueMutation("/api/confirm", {});
-  if (state.completed) showToast("Calibration complete: 40 / 40");
-  else showToast("Task cameras confirmed");
+elements.confirmTask.addEventListener("click", () => {
+  enqueueMutation("/api/confirm", {}, null, (nextState) => {
+    if (nextState.completed) showToast("Calibration complete: 40 / 40");
+    else showToast("Task cameras confirmed");
+  });
+});
+
+elements.saveProgress.addEventListener("click", () => {
+  enqueueMutation("/api/save", {}, [], () => {
+    showToast("Task saved; you can continue editing");
+  });
+});
+
+elements.downloadConfig.addEventListener("click", () => {
+  if (state.dirty) {
+    showToast("Unsaved edits are not included in this download", true);
+  }
+  const link = document.createElement("a");
+  link.href = `/api/config/download?revision=${state.revision}`;
+  link.download = "task_operation_cameras.yaml";
+  document.body.append(link);
+  link.click();
+  link.remove();
 });
 
 window.addEventListener("keydown", (event) => {

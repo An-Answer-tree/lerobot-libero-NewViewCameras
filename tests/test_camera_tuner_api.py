@@ -6,6 +6,7 @@ import io
 from pathlib import Path
 
 import numpy as np
+import yaml
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
@@ -178,3 +179,51 @@ def test_confirm_advances_and_restart_resumes_first_unconfirmed(tmp_path: Path) 
     assert restarted.current_index == 1
     first_task = restarted.tasks[0]
     assert restarted.config.is_confirmed(first_task.suite, first_task.task_name)
+
+
+def test_save_stays_on_task_and_downloads_resumable_yaml(tmp_path: Path) -> None:
+    config_path = tmp_path / "camera-snapshot.yaml"
+    controller = _build_controller(config_path)
+    client = create_app(controller).test_client()
+
+    client.post(
+        "/api/adjust",
+        json={
+            "camera": "operation_leftview",
+            "translation": [0.5, 0, 0],
+            "rotation_degrees": [0, 0, 0],
+        },
+    )
+    saved = client.post("/api/save", json={}).get_json()
+
+    assert saved["current_task"]["index"] == 0
+    assert saved["current_task"]["confirmed"] is True
+    assert saved["dirty"] is False
+    assert saved["progress"] == {"confirmed": 1, "total": 40}
+
+    download = client.get("/api/config/download")
+    document = yaml.safe_load(download.data)
+    first_task = controller.tasks[0]
+    saved_position = document["suites"][first_task.suite][first_task.task_name][
+        "operation_leftview"
+    ]["position"]
+    assert download.status_code == 200
+    assert download.mimetype == "application/x-yaml"
+    assert "attachment" in download.headers["Content-Disposition"]
+    assert "camera-snapshot.yaml" in download.headers["Content-Disposition"]
+    assert saved_position[0] == 1.5
+
+    client.post(
+        "/api/adjust",
+        json={
+            "camera": "operation_leftview",
+            "translation": [0.25, 0, 0],
+            "rotation_degrees": [0, 0, 0],
+        },
+    )
+    resaved = client.post("/api/save", json={}).get_json()
+    assert resaved["current_task"]["index"] == 0
+    reloaded = TaskCameraConfig.load(config_path)
+    assert reloaded.get_task(first_task.suite, first_task.task_name)[
+        "operation_leftview"
+    ].position[0] == 1.75

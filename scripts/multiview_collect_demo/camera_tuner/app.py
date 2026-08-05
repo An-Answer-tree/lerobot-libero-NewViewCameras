@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 import numpy as np
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, send_file
 
 from libero.libero import get_libero_path
 from multiview_collect_demo.camera_tuner.session import MujocoCameraSession
@@ -141,13 +141,7 @@ class CameraTunerController:
     def confirm(self) -> dict[str, Any]:
         """Atomically saves all four cameras and opens the next unconfirmed task."""
 
-        task = self.tasks[self.current_index]
-        poses = {
-            camera_name: self.session.camera_poses[camera_name]
-            for camera_name in OPERATION_CAMERA_NAMES
-        }
-        self.config.set_task(task.suite, task.task_name, poses)
-        self.config.save()
+        self._save_current_task()
         self.dirty = False
 
         next_index = self._next_unconfirmed_index(self.current_index)
@@ -158,6 +152,24 @@ class CameraTunerController:
             self.completed = False
             self._load_task(next_index)
         return self.state()
+
+    def save_current(self) -> dict[str, Any]:
+        """Atomically saves all four cameras without leaving the current task."""
+
+        self._save_current_task()
+        self.dirty = False
+        self.completed = self.config.confirmed_count == len(self.tasks)
+        self.revision += 1
+        return self.state()
+
+    def _save_current_task(self) -> None:
+        task = self.tasks[self.current_index]
+        poses = {
+            camera_name: self.session.camera_poses[camera_name]
+            for camera_name in OPERATION_CAMERA_NAMES
+        }
+        self.config.set_task(task.suite, task.task_name, poses)
+        self.config.save()
 
     def _next_unconfirmed_index(self, current_index: int) -> Optional[int]:
         ordered_indices = list(range(current_index + 1, len(self.tasks))) + list(
@@ -314,6 +326,24 @@ def create_app(
     @app.post("/api/confirm")
     def confirm() -> Response:
         return jsonify(controller.confirm())
+
+    @app.post("/api/save")
+    def save_current() -> Response:
+        return jsonify(controller.save_current())
+
+    @app.get("/api/config/download")
+    def download_config() -> Response:
+        if not controller.config.path.is_file():
+            controller.config.save()
+        response = send_file(
+            controller.config.path,
+            mimetype="application/x-yaml",
+            as_attachment=True,
+            download_name=controller.config.path.name,
+            conditional=False,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.errorhandler(ValueError)
     def handle_value_error(error: ValueError) -> tuple[Response, int]:
