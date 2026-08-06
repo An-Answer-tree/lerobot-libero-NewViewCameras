@@ -25,6 +25,8 @@ const keyDirections = {
   e: "up",
 };
 
+const poseClipboardStorageKey = "libero-camera-tuner-pose-v1";
+
 let state = null;
 let activeCamera = "operation_backview";
 let movementSpeed = 0.01;
@@ -33,6 +35,8 @@ let toastTimer = null;
 let dragStart = null;
 let taskSwitchPending = false;
 let heldMovement = null;
+let copiedPose = loadCopiedPose();
+let posePastePending = false;
 const imageUrls = new Map();
 
 const elements = {
@@ -55,6 +59,8 @@ const elements = {
   poseForm: document.querySelector("#pose-form"),
   poseInputs: [...document.querySelectorAll("[data-pose-group]")],
   applyPose: document.querySelector("#apply-pose"),
+  copyPose: document.querySelector("#copy-pose"),
+  pastePose: document.querySelector("#paste-pose"),
   resetCamera: document.querySelector("#reset-camera"),
   speedControl: document.querySelector("#speed-control"),
   translationControls: document.querySelector("#translation-controls"),
@@ -113,6 +119,7 @@ function applyState(nextState) {
   renderCameraControls();
   renderSceneControls();
   renderPose();
+  updatePoseClipboardControls();
   elements.saveState.classList.toggle("dirty", state.dirty);
   elements.saveState.querySelector("strong").textContent = state.dirty
     ? "Unsaved changes"
@@ -204,6 +211,71 @@ function renderPose() {
 
 function formatNumber(value) {
   return Number(value).toFixed(4);
+}
+
+function loadCopiedPose() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(poseClipboardStorageKey));
+    const position = value?.position;
+    const quaternion = value?.quaternion_wxyz;
+    const components = [...(position ?? []), ...(quaternion ?? [])];
+    if (
+      value?.schema_version !== 1
+      || position?.length !== 3
+      || quaternion?.length !== 4
+      || !components.every(Number.isFinite)
+    ) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function updatePoseClipboardControls() {
+  elements.copyPose.disabled = !state;
+  elements.pastePose.disabled = !state || !copiedPose || posePastePending;
+  elements.pastePose.title = copiedPose
+    ? `Paste ${cameraLabels[copiedPose.source_camera] ?? "camera"} pose from ${copiedPose.source_task}`
+    : "Copy a pose first";
+}
+
+function copyActivePose() {
+  const pose = state.cameras[activeCamera];
+  copiedPose = {
+    schema_version: 1,
+    position: [...pose.position],
+    quaternion_wxyz: [...pose.quaternion_wxyz],
+    source_task: state.current_task.id,
+    source_camera: activeCamera,
+  };
+  try {
+    sessionStorage.setItem(poseClipboardStorageKey, JSON.stringify(copiedPose));
+  } catch {
+    // The in-memory copy remains available when browser storage is disabled.
+  }
+  const text = [...copiedPose.position, ...copiedPose.quaternion_wxyz].join(" ");
+  navigator.clipboard?.writeText?.(text).catch(() => undefined);
+  updatePoseClipboardControls();
+  showToast(`${cameraLabels[activeCamera]} pose copied`);
+}
+
+function pasteCopiedPose() {
+  if (!copiedPose) return;
+  const camera = activeCamera;
+  posePastePending = true;
+  updatePoseClipboardControls();
+  enqueueMutation("/api/camera/pose", {
+    camera,
+    position: copiedPose.position,
+    quaternion_wxyz: copiedPose.quaternion_wxyz,
+  }, {
+    cameras: [camera],
+    onSuccess: () => showToast(`${cameraLabels[camera]} pose synchronized`),
+    onSettled: () => {
+      posePastePending = false;
+      updatePoseClipboardControls();
+    },
+  });
 }
 
 function selectCamera(camera) {
@@ -317,6 +389,9 @@ elements.resetCamera.addEventListener("click", () => {
   const camera = activeCamera;
   enqueueMutation("/api/camera/reset", { camera }, { cameras: [camera] });
 });
+
+elements.copyPose.addEventListener("click", copyActivePose);
+elements.pastePose.addEventListener("click", pasteCopiedPose);
 
 elements.poseForm.addEventListener("submit", (event) => {
   event.preventDefault();

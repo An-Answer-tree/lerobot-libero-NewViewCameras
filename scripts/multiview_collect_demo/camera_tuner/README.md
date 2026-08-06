@@ -54,6 +54,10 @@ ssh -L 19985:127.0.0.1:19985 <remote-host>
 - Enter `x y z` and quaternion `w x y z` values under World pose, then select
   Apply pose or press Enter to set the active camera exactly. The quaternion is
   normalized after submission; a zero-length quaternion is rejected.
+- Copy stores the active camera's full-precision pose in the browser session and
+  writes `x y z qw qx qy qz` to the system clipboard when permitted. After
+  opening another task or camera, Paste synchronizes that pose to the new active
+  camera. The pasted change remains unsaved until Save task or Confirm is used.
 - Fine, medium, and fast set the translation increment. Holding Shift while
   using a movement key multiplies the current increment by five.
 - Reset restores only the active camera to the pose loaded for the task.
