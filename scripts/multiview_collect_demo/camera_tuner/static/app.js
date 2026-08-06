@@ -16,6 +16,15 @@ const movementVectors = {
   up: [0, 1, 0],
 };
 
+const rotationVectors = {
+  pitch_up: [-1, 0, 0],
+  pitch_down: [1, 0, 0],
+  yaw_left: [0, 1, 0],
+  yaw_right: [0, -1, 0],
+  roll_left: [0, 0, 1],
+  roll_right: [0, 0, -1],
+};
+
 const keyDirections = {
   w: "forward",
   s: "backward",
@@ -30,6 +39,7 @@ const poseClipboardStorageKey = "libero-camera-tuner-pose-v1";
 let state = null;
 let activeCamera = "operation_backview";
 let movementSpeed = 0.01;
+let rotationSpeed = 2;
 let requestChain = Promise.resolve();
 let toastTimer = null;
 let dragStart = null;
@@ -63,7 +73,9 @@ const elements = {
   pastePose: document.querySelector("#paste-pose"),
   resetCamera: document.querySelector("#reset-camera"),
   speedControl: document.querySelector("#speed-control"),
+  controlMode: document.querySelector("#control-mode"),
   translationControls: document.querySelector("#translation-controls"),
+  rotationControls: document.querySelector("#rotation-controls"),
   saveState: document.querySelector("#save-state"),
   saveProgress: document.querySelector("#save-progress"),
   downloadConfig: document.querySelector("#download-config"),
@@ -353,6 +365,16 @@ function move(direction, multiplier = 1) {
   }, { cameras: [camera] });
 }
 
+function rotate(direction, multiplier = 1) {
+  const camera = activeCamera;
+  const rotation = rotationVectors[direction].map((value) => value * rotationSpeed * multiplier);
+  return enqueueMutation("/api/adjust", {
+    camera,
+    translation: [0, 0, 0],
+    rotation_degrees: rotation,
+  }, { cameras: [camera] });
+}
+
 function stopHeldMovement(pointerId = null) {
   if (!heldMovement || (pointerId !== null && heldMovement.pointerId !== pointerId)) return;
   heldMovement.button.classList.remove("pressed");
@@ -361,8 +383,41 @@ function stopHeldMovement(pointerId = null) {
 
 async function repeatHeldMovement(movement) {
   while (heldMovement === movement) {
-    await move(movement.direction);
+    await movement.adjust();
   }
+}
+
+function bindHoldControls(container) {
+  container.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("button[data-move], button[data-rotate]");
+    if (!button || event.button !== 0) return;
+    event.preventDefault();
+    stopHeldMovement();
+    button.setPointerCapture(event.pointerId);
+    button.classList.add("pressed");
+    const movement = {
+      adjust: button.dataset.move
+        ? () => move(button.dataset.move)
+        : () => rotate(button.dataset.rotate),
+      button,
+      pointerId: event.pointerId,
+    };
+    heldMovement = movement;
+    void repeatHeldMovement(movement);
+  });
+
+  container.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-move], button[data-rotate]");
+    if (!button || event.detail !== 0) return;
+    if (button.dataset.move) move(button.dataset.move);
+    else rotate(button.dataset.rotate);
+  });
+
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((eventName) => {
+    container.addEventListener(eventName, (event) => {
+      stopHeldMovement(event.pointerId);
+    });
+  });
 }
 
 function showToast(message, isError = false) {
@@ -423,40 +478,28 @@ elements.poseForm.addEventListener("submit", (event) => {
 });
 
 elements.speedControl.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-speed]");
+  const button = event.target.closest("button[data-translation-speed]");
   if (!button) return;
-  movementSpeed = Number(button.dataset.speed);
+  movementSpeed = Number(button.dataset.translationSpeed);
+  rotationSpeed = Number(button.dataset.rotationSpeed);
   elements.speedControl.querySelectorAll("button").forEach((item) => {
     item.classList.toggle("active", item === button);
   });
 });
 
-elements.translationControls.addEventListener("pointerdown", (event) => {
-  const button = event.target.closest("button[data-move]");
-  if (!button || event.button !== 0) return;
-  event.preventDefault();
+elements.controlMode.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-control-mode]");
+  if (!button) return;
   stopHeldMovement();
-  button.setPointerCapture(event.pointerId);
-  button.classList.add("pressed");
-  const movement = {
-    button,
-    direction: button.dataset.move,
-    pointerId: event.pointerId,
-  };
-  heldMovement = movement;
-  void repeatHeldMovement(movement);
-});
-
-elements.translationControls.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-move]");
-  if (button && event.detail === 0) move(button.dataset.move);
-});
-
-["pointerup", "pointercancel", "lostpointercapture"].forEach((eventName) => {
-  elements.translationControls.addEventListener(eventName, (event) => {
-    stopHeldMovement(event.pointerId);
+  const rotationActive = button.dataset.controlMode === "rotation";
+  elements.translationControls.classList.toggle("hidden", rotationActive);
+  elements.rotationControls.classList.toggle("hidden", !rotationActive);
+  elements.controlMode.querySelectorAll("button").forEach((item) => {
+    item.classList.toggle("active", item === button);
   });
 });
+
+[elements.translationControls, elements.rotationControls].forEach(bindHoldControls);
 
 window.addEventListener("blur", () => stopHeldMovement());
 

@@ -49,6 +49,9 @@ ssh -L 19985:127.0.0.1:19985 <remote-host>
 - The on-screen X, Y, and Z controls provide the same camera-local translation.
   Click for one step, or hold a button for continuous movement without queuing
   stale render requests.
+- Switch the on-screen control mode to Rotate for pitch, yaw, and roll buttons.
+  Rotation buttons also support click and hold. Fine, medium, and fast use
+  angular steps of 0.5, 2, and 8 degrees respectively.
 - Drag the main preview to change yaw and pitch. Use the mouse wheel to move
   forward or backward.
 - Enter `x y z` and quaternion `w x y z` values under World pose, then select

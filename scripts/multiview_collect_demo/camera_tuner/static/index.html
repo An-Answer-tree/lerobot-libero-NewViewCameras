@@ -100,14 +100,18 @@
 
         <section class="inspector-section movement-section">
           <div class="panel-heading">
-            <h2>3D translation</h2>
+            <h2>3D controls</h2>
             <div id="speed-control" class="segmented" aria-label="Movement speed">
-              <button type="button" data-speed="0.002">Fine</button>
-              <button type="button" data-speed="0.01" class="active">Med</button>
-              <button type="button" data-speed="0.05">Fast</button>
+              <button type="button" data-translation-speed="0.002" data-rotation-speed="0.5">Fine</button>
+              <button type="button" data-translation-speed="0.01" data-rotation-speed="2" class="active">Med</button>
+              <button type="button" data-translation-speed="0.05" data-rotation-speed="8">Fast</button>
             </div>
           </div>
-          <div id="translation-controls" class="translation-controls" aria-label="Camera-local 3D translation">
+          <div id="control-mode" class="segmented control-mode" aria-label="Camera control mode">
+            <button type="button" data-control-mode="translation" class="active">Translate</button>
+            <button type="button" data-control-mode="rotation">Rotate</button>
+          </div>
+          <div id="translation-controls" class="spatial-controls" aria-label="Camera-local 3D translation">
             <div class="axis-control">
               <span class="axis-label axis-x" aria-hidden="true">X</span>
               <button type="button" data-move="left" title="Move left (-X)" aria-label="Move left along negative X">&#8592;</button>
@@ -122,6 +126,23 @@
               <span class="axis-label axis-z" aria-hidden="true">Z</span>
               <button type="button" data-move="forward" title="Move forward (-Z)" aria-label="Move forward along negative Z">&#9650;</button>
               <button type="button" data-move="backward" title="Move backward (+Z)" aria-label="Move backward along positive Z">&#9660;</button>
+            </div>
+          </div>
+          <div id="rotation-controls" class="spatial-controls hidden" aria-label="Camera-local orientation adjustment">
+            <div class="axis-control">
+              <span class="axis-label axis-x" aria-hidden="true">P</span>
+              <button type="button" data-rotate="pitch_up" title="Pitch up (-X)" aria-label="Pitch camera up around local X">&#9650;</button>
+              <button type="button" data-rotate="pitch_down" title="Pitch down (+X)" aria-label="Pitch camera down around local X">&#9660;</button>
+            </div>
+            <div class="axis-control">
+              <span class="axis-label axis-y" aria-hidden="true">Y</span>
+              <button type="button" data-rotate="yaw_left" title="Yaw left (+Y)" aria-label="Yaw camera left around local Y">&#8592;</button>
+              <button type="button" data-rotate="yaw_right" title="Yaw right (-Y)" aria-label="Yaw camera right around local Y">&#8594;</button>
+            </div>
+            <div class="axis-control">
+              <span class="axis-label axis-z" aria-hidden="true">R</span>
+              <button type="button" data-rotate="roll_left" title="Roll counterclockwise (+Z)" aria-label="Roll camera counterclockwise around local Z">&#8634;</button>
+              <button type="button" data-rotate="roll_right" title="Roll clockwise (-Z)" aria-label="Roll camera clockwise around local Z">&#8635;</button>
             </div>
           </div>
         </section>
