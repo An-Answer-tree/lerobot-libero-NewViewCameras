@@ -63,7 +63,9 @@ ssh -L 19985:127.0.0.1:19985 <remote-host>
   camera. The pasted change remains unsaved until Save task or Confirm is used.
 - Fine, medium, and fast set the translation increment. Holding Shift while
   using a movement key multiplies the current increment by five.
-- Reset restores only the active camera to the pose loaded for the task.
+- Reset restores only the active camera to the untouched heuristic pose from
+  `demo_0`, even when that task was opened with a saved calibration. Reset is an
+  unsaved edit until Save task or Confirm is used.
 - Demo changes rebuild that demo's XML while preserving all current camera
   poses. Frame changes only restore `states[t]`.
 - Save task atomically stores all four current poses without changing tasks.

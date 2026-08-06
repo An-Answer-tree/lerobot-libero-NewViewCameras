@@ -149,7 +149,7 @@ class CameraTunerController:
         return self.state()
 
     def reset_camera(self, camera_name: str) -> dict[str, Any]:
-        """Restores one camera to its task-load pose."""
+        """Restores one camera to its original heuristic pose."""
 
         if camera_name not in OPERATION_CAMERA_NAMES:
             raise ValueError(f"Unknown operation camera: {camera_name}")

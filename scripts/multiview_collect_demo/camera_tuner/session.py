@@ -156,13 +156,16 @@ class MujocoCameraSession:
                 int(len(data_group[demo_key]["states"])) for demo_key in self.demo_keys
             ]
 
-        self.camera_poses = dict(saved_poses or {})
+        self.camera_poses = {}
         try:
-            self._load_demo(0, preserve_camera_poses=bool(saved_poses))
+            self._load_demo(0, preserve_camera_poses=False)
         except Exception:
             self.close()
             raise
         self.initial_camera_poses = dict(self.camera_poses)
+        if saved_poses:
+            self.camera_poses = dict(saved_poses)
+            self._apply_camera_poses()
 
     def _load_demo(self, demo_index: int, preserve_camera_poses: bool = True) -> None:
         if self.dataset_path is None:
@@ -355,7 +358,7 @@ class MujocoCameraSession:
         return pose
 
     def reset_camera(self, camera_name: str) -> CameraPose:
-        """Restores one camera to the pose captured when the task was loaded."""
+        """Restores one camera to its untouched heuristic pose from demo zero."""
 
         self._require_camera(camera_name)
         self.camera_poses[camera_name] = self.initial_camera_poses[camera_name]

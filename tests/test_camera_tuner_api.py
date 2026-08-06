@@ -49,8 +49,8 @@ class FakeSession:
 
     def load_task(self, task, dataset_path, saved_poses=None) -> None:
         del dataset_path
-        self.camera_poses = dict(saved_poses or _default_poses(float(task.index)))
-        self.initial_camera_poses = dict(self.camera_poses)
+        self.initial_camera_poses = _default_poses(float(task.index))
+        self.camera_poses = dict(saved_poses or self.initial_camera_poses)
         self.demo_index = 0
         self.frame_index = 0
 
@@ -213,6 +213,38 @@ def test_confirm_advances_and_restart_resumes_first_unconfirmed(tmp_path: Path) 
     assert restarted.current_index == 1
     first_task = restarted.tasks[0]
     assert restarted.config.is_confirmed(first_task.suite, first_task.task_name)
+
+
+def test_reset_uses_untouched_heuristic_pose_instead_of_saved_pose(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "cameras.yaml"
+    controller = _build_controller(config_path)
+    first_task = controller.tasks[0]
+    saved_poses = _default_poses(100.0)
+    saved_poses["operation_backview"] = CameraPose.from_mapping(
+        {
+            "position": [100.0, -5.0, 3.0],
+            "quaternion_wxyz": [0.5, 0.5, 0.5, 0.5],
+        }
+    )
+    controller.config.set_task(first_task.suite, first_task.task_name, saved_poses)
+    controller.config.save()
+
+    loaded = controller.load_task(first_task.task_id)
+    assert loaded["cameras"]["operation_backview"] == saved_poses[
+        "operation_backview"
+    ].to_mapping()
+
+    reset = controller.reset_camera("operation_backview")
+    assert reset["dirty"] is True
+    assert reset["cameras"]["operation_backview"] == _default_poses()[
+        "operation_backview"
+    ].to_mapping()
+    persisted = TaskCameraConfig.load(config_path).get_task(
+        first_task.suite, first_task.task_name
+    )
+    assert persisted["operation_backview"] == saved_poses["operation_backview"]
 
 
 def test_save_stays_on_task_and_downloads_resumable_yaml(tmp_path: Path) -> None:
