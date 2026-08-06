@@ -592,16 +592,44 @@ input[type="range"] {
   font-weight: 750;
 }
 
-.nudge-grid {
+.translation-controls {
   display: grid;
-  grid-template-columns: repeat(3, 42px);
-  grid-template-rows: repeat(2, 34px);
-  justify-content: center;
   gap: 7px;
   margin-top: 16px;
+  touch-action: none;
+  user-select: none;
 }
 
-.nudge-grid button {
+.axis-control {
+  display: grid;
+  grid-template-columns: 28px repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.axis-label {
+  display: grid;
+  place-items: center;
+  border-left: 2px solid currentColor;
+  background: #202428;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.axis-x {
+  color: var(--cyan);
+}
+
+.axis-y {
+  color: var(--green);
+}
+
+.axis-z {
+  color: var(--amber);
+}
+
+.axis-control button {
+  height: 34px;
   border: 1px solid var(--line-strong);
   border-radius: 4px;
   background: #101214;
@@ -609,8 +637,10 @@ input[type="range"] {
   font-size: 15px;
 }
 
-.nudge-grid button:hover {
+.axis-control button:hover,
+.axis-control button.pressed {
   border-color: var(--cyan);
+  background: #263238;
   color: var(--text);
 }
 

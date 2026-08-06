@@ -32,6 +32,7 @@ let requestChain = Promise.resolve();
 let toastTimer = null;
 let dragStart = null;
 let taskSwitchPending = false;
+let heldMovement = null;
 const imageUrls = new Map();
 
 const elements = {
@@ -56,6 +57,7 @@ const elements = {
   applyPose: document.querySelector("#apply-pose"),
   resetCamera: document.querySelector("#reset-camera"),
   speedControl: document.querySelector("#speed-control"),
+  translationControls: document.querySelector("#translation-controls"),
   saveState: document.querySelector("#save-state"),
   saveProgress: document.querySelector("#save-progress"),
   downloadConfig: document.querySelector("#download-config"),
@@ -272,11 +274,23 @@ function loadTask(taskId) {
 function move(direction, multiplier = 1) {
   const camera = activeCamera;
   const vector = movementVectors[direction].map((value) => value * movementSpeed * multiplier);
-  enqueueMutation("/api/adjust", {
+  return enqueueMutation("/api/adjust", {
     camera,
     translation: vector,
     rotation_degrees: [0, 0, 0],
   }, { cameras: [camera] });
+}
+
+function stopHeldMovement(pointerId = null) {
+  if (!heldMovement || (pointerId !== null && heldMovement.pointerId !== pointerId)) return;
+  heldMovement.button.classList.remove("pressed");
+  heldMovement = null;
+}
+
+async function repeatHeldMovement(movement) {
+  while (heldMovement === movement) {
+    await move(movement.direction);
+  }
 }
 
 function showToast(message, isError = false) {
@@ -342,10 +356,34 @@ elements.speedControl.addEventListener("click", (event) => {
   });
 });
 
-document.querySelector(".nudge-grid").addEventListener("click", (event) => {
+elements.translationControls.addEventListener("pointerdown", (event) => {
   const button = event.target.closest("button[data-move]");
-  if (button) move(button.dataset.move);
+  if (!button || event.button !== 0) return;
+  event.preventDefault();
+  stopHeldMovement();
+  button.setPointerCapture(event.pointerId);
+  button.classList.add("pressed");
+  const movement = {
+    button,
+    direction: button.dataset.move,
+    pointerId: event.pointerId,
+  };
+  heldMovement = movement;
+  void repeatHeldMovement(movement);
 });
+
+elements.translationControls.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-move]");
+  if (button && event.detail === 0) move(button.dataset.move);
+});
+
+["pointerup", "pointercancel", "lostpointercapture"].forEach((eventName) => {
+  elements.translationControls.addEventListener(eventName, (event) => {
+    stopHeldMovement(event.pointerId);
+  });
+});
+
+window.addEventListener("blur", () => stopHeldMovement());
 
 elements.confirmTask.addEventListener("click", () => {
   enqueueMutation("/api/confirm", {}, {

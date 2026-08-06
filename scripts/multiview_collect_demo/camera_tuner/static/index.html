@@ -96,20 +96,29 @@
 
         <section class="inspector-section movement-section">
           <div class="panel-heading">
-            <h2>Local movement</h2>
+            <h2>3D translation</h2>
             <div id="speed-control" class="segmented" aria-label="Movement speed">
               <button type="button" data-speed="0.002">Fine</button>
               <button type="button" data-speed="0.01" class="active">Med</button>
               <button type="button" data-speed="0.05">Fast</button>
             </div>
           </div>
-          <div class="nudge-grid">
-            <button type="button" data-move="up" title="Move up" aria-label="Move up">&#8593;</button>
-            <button type="button" data-move="forward" title="Move forward" aria-label="Move forward">&#9650;</button>
-            <button type="button" data-move="down" title="Move down" aria-label="Move down">&#8595;</button>
-            <button type="button" data-move="left" title="Move left" aria-label="Move left">&#8592;</button>
-            <button type="button" data-move="backward" title="Move backward" aria-label="Move backward">&#9660;</button>
-            <button type="button" data-move="right" title="Move right" aria-label="Move right">&#8594;</button>
+          <div id="translation-controls" class="translation-controls" aria-label="Camera-local 3D translation">
+            <div class="axis-control">
+              <span class="axis-label axis-x" aria-hidden="true">X</span>
+              <button type="button" data-move="left" title="Move left (-X)" aria-label="Move left along negative X">&#8592;</button>
+              <button type="button" data-move="right" title="Move right (+X)" aria-label="Move right along positive X">&#8594;</button>
+            </div>
+            <div class="axis-control">
+              <span class="axis-label axis-y" aria-hidden="true">Y</span>
+              <button type="button" data-move="down" title="Move down (-Y)" aria-label="Move down along negative Y">&#8595;</button>
+              <button type="button" data-move="up" title="Move up (+Y)" aria-label="Move up along positive Y">&#8593;</button>
+            </div>
+            <div class="axis-control">
+              <span class="axis-label axis-z" aria-hidden="true">Z</span>
+              <button type="button" data-move="forward" title="Move forward (-Z)" aria-label="Move forward along negative Z">&#9650;</button>
+              <button type="button" data-move="backward" title="Move backward (+Z)" aria-label="Move backward along positive Z">&#9660;</button>
+            </div>
           </div>
         </section>
 

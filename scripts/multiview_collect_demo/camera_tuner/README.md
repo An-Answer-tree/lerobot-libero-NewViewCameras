@@ -46,6 +46,9 @@ ssh -L 19985:127.0.0.1:19985 <remote-host>
 - Select one of the four camera tabs or thumbnails before adjusting it.
 - `W` / `S` move forward and backward; `A` / `D` move left and right;
   `Q` / `E` move down and up in the active camera's local frame.
+- The on-screen X, Y, and Z controls provide the same camera-local translation.
+  Click for one step, or hold a button for continuous movement without queuing
+  stale render requests.
 - Drag the main preview to change yaw and pitch. Use the mouse wheel to move
   forward or backward.
 - Enter `x y z` and quaternion `w x y z` values under World pose, then select
